@@ -8,11 +8,16 @@
 enso/
 ├─ scripts/
 │  ├─ Update-EnsoData.ps1   抓取 + 解析 + 生成 HTML/CSV（主脚本）
+│  ├─ Publish-ToGitHub.ps1  走 GitHub API 发布到仓库（等价 git push，绕开被阻断的 github.com）
 │  ├─ build-basemap.mjs     生成简化世界陆地底图（Natural Earth 110m → SVG path）
 │  ├─ serve-report.mjs      本地静态服务器，用于在浏览器里查看报告
-│  └─ verify-report.mjs     报告自检（Node 里跑页面脚本，含缩放/点击等交互模拟）
+│  └─ verify-report.mjs     报告自检（34 项：数据渲染、地图、时间轴缩放/平移/点击、页脚）
+├─ assets/
+│  └─ qrcode.jpg            课题组公众号二维码（页脚用，入库，生成时 base64 内嵌）
+├─ docs/
+│  └─ index.html            GitHub Pages 发布副本（含 .nojekyll）
 ├─ report/
-│  └─ enso_dashboard.html   生成的仪表盘（自包含，双击即可打开）
+│  └─ enso_dashboard.html   生成的仪表盘（自包含，双击即可打开；本地预览用，不入库）
 ├─ data/
 │  ├─ raw/                  原始文件 + _meta.json（源站 Last-Modified）+ maps/（CPC 全球回归图）
 │  └─ processed/

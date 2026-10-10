@@ -108,32 +108,39 @@ node .\scripts\verify-report.mjs
 
 ## 部署到 GitHub Pages
 
-页面是**零外部请求的单文件**，非常适合静态托管。仓库里已经放好所需的一切：`.gitignore`、`docs/index.html`（发布副本）、`.github/workflows/enso-pages.yml`（每周自动重建并发布）。
+**线上地址：<https://pengzhenran.github.io/enso-dashboard/>**（仓库 <https://github.com/pengzhenran/enso-dashboard>，Pages 源为 `main` 分支的 `/docs` 目录）
 
-### 路线 A：GitHub Actions（推荐，自动更新）
+页面是**零外部请求的单文件**，非常适合静态托管。
 
-1. `gh repo create <仓库名> --public --source . --push`（或手动 `git remote add` 后 push）。
-2. 仓库 **Settings → Pages → Build and deployment → Source** 选 **GitHub Actions**。
-3. 在 **Actions** 页手动跑一次 `ENSO dashboard · 生成并发布到 GitHub Pages`（workflow_dispatch），之后每周一 UTC 02:00（北京时间 10:00）自动重建。
-4. 站点地址：`https://<用户名>.github.io/<仓库名>/`。
-
-工作流在 `windows-latest` 上跑 `Update-EnsoData.ps1 -PublishDir docs`，然后 `verify-report.mjs` 自检，最后由 `actions/deploy-pages` 发布 `docs/`。生成物不必提交，仓库里只留源码也不会断更。
-
-### 路线 B：直接提交生成物（无需 Actions）
+### 日常更新：一条命令
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\Update-EnsoData.ps1 -PublishDir docs
-git add docs; git commit -m "update ENSO dashboard"; git push
+# 重新抓数 → 生成 docs/index.html → 通过 GitHub API 发布
+powershell -ExecutionPolicy Bypass -File .\scripts\Publish-ToGitHub.ps1
+
+# 只重传现有页面，不重新抓数
+powershell -ExecutionPolicy Bypass -File .\scripts\Publish-ToGitHub.ps1 -SkipRegenerate -Path docs/index.html
 ```
 
-仓库 **Settings → Pages → Source** 选 **Deploy from a branch → main / docs** 即可。缺点是每次更新都要本地跑一次。
+`Publish-ToGitHub.ps1` 用 **GitHub Git Data API**（blob → tree → commit → 更新分支）发布，等价于一次 `git push`，但只需要 `api.github.com` 可达。**很多国内网络 git push 到 github.com 会被 reset，而 api.github.com 通常能通**，所以本仓库推荐用这个脚本而不是 `git push`。
 
-### 注意
+### 可选：让 GitHub Actions 每周自动更新
 
-- **公开性**：公开仓库的 Pages 站点对所有人可见；私有仓库要用 Pages 需要 GitHub Pro/Team。若不想公开，可改用 Cloudflare Pages、Vercel，或只把 `docs/index.html` 当附件分发。
-- 页面运行时**不抓任何数据**，因此不存在 CORS/接口失效问题；数据新鲜度完全取决于上一次生成时间（页头会显示）。
-- 单文件约 320 KB，远低于 Pages 限制。
-- 工作流默认不提交生成物；若希望保留历史，可在工作流里加一步 `git commit`（需要 `permissions: contents: write`）。
+仓库里已备好 `.github/workflows/enso-pages.yml`（每周一 UTC 02:00 在 `windows-latest` 上重新抓数、自检、发布）。但它**没有随代码上传**，因为当前 `gh` token 缺少 `workflow` 权限（GitHub 对 `.github/workflows/*` 一律拒绝写入）。启用步骤：
+
+```powershell
+gh auth refresh -s workflow                # 一次性授权，浏览器里确认
+powershell -ExecutionPolicy Bypass -File .\scripts\Publish-ToGitHub.ps1 -SkipRegenerate
+```
+
+然后把仓库 **Settings → Pages → Build and deployment → Source** 改成 **GitHub Actions**；也可以在网页端 **Add file → Create new file**，路径填 `.github/workflows/enso-pages.yml`，粘贴本地同名文件的内容（无需改 token 权限）。
+
+### 说明与注意
+
+- **公开性**：公开仓库的 Pages 站点对所有人可见；私有仓库要用 Pages 需要 GitHub Pro/Team。不想公开可改用 Cloudflare Pages、Vercel，或只把 `docs/index.html` 当附件分发。
+- 页面运行时**不抓任何数据**，不存在 CORS/接口失效问题；数据新鲜度取决于上一次发布时间（页头会显示生成时间）。
+- 单文件约 320 KB，远低于 Pages 限制；`data/raw/` 已通过 `.gitignore` 排除。
+- 本地 `git` 的 `origin` 仍指向 https 地址，但该网络下推不上去；请用 `Publish-ToGitHub.ps1`。
 
 ## 可选：每天自动更新（本机）
 

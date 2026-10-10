@@ -1,0 +1,11 @@
+# 抓取缓存：体积大且可随时由脚本重新下载，不入库
+data/raw/
+
+# 本地生成物：docs/ 是提交进仓库的发布副本（Pages 直接托管），report/ 只是本地预览用，不入库
+report/
+
+# 系统与编辑器杂项
+Thumbs.db
+desktop.ini
+.DS_Store
+*.tmp

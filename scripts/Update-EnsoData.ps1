@@ -174,6 +174,16 @@ if (-not (Test-Path $BasemapFile)) {
 }
 $basemapPath = if (Test-Path $BasemapFile) { [System.IO.File]::ReadAllText($BasemapFile).Trim() } else { '' }
 
+# ---------------------------------------------------------------- 课题组二维码（页脚作者信息用）
+# 唯一来源：仓库内 assets\qrcode.jpg（自定义二维码请直接替换该文件）
+$QrAsset = Join-Path $Root 'assets\qrcode.jpg'
+$qrFile = if (Test-Path $QrAsset) { $QrAsset } else { '' }
+if (-not $qrFile) { Write-Warning 'assets\qrcode.jpg 不存在，页脚将不显示二维码' }
+$qrcodeData = if ($qrFile) {
+    'data:image/jpeg;base64,' + [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($qrFile))
+} else { '' }
+if ($qrFile) { Write-Host ("      qrcode {0,-28} {1,6:N1} KB" -f (Split-Path -Leaf $qrFile), ((Get-Item $qrFile).Length / 1KB)) }
+
 
 # ---------------------------------------------------------------- 解析：周指数
 Write-Host '[2/4] 解析指数 ...' -ForegroundColor Cyan
@@ -363,6 +373,7 @@ $lmDisplay['roni_prob.html'] = $lmDisplay['roni_outlook.html']
 $payload = [ordered]@{
     generated = (Get-Date).ToString('yyyy-MM-dd HH:mm')
     status    = [ordered]@{ alert = $status.Alert; issued = $status.Issued; next = $status.Next; synopsis = $status.Synopsis }
+    qrcode    = $qrcodeData
     span      = [ordered]@{
         weeklyFirst  = $chartWeeks[0].Week.ToString('yyyy-MM-dd')
         weeklyLast   = $chartWeeks[-1].Week.ToString('yyyy-MM-dd')
@@ -499,6 +510,18 @@ $template = @'
         padding:4px 10px;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap}
   .mini:hover{color:var(--fg);border-color:var(--accent)}
   canvas{cursor:crosshair}
+  /* ---- 页脚作者信息卡片 ---- */
+  .author{display:flex;gap:26px;align-items:flex-start;flex-wrap:wrap;margin-top:20px;
+          background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);
+          border-radius:12px;padding:16px 18px}
+  .who-info h3{margin:0 0 8px;font-size:14px;color:var(--fg);border-left:3px solid var(--accent);padding-left:9px}
+  .who-info p{margin:4px 0;font-size:13px;line-height:1.7;color:var(--muted)}
+  .who-info b{color:var(--fg)}
+  .who-info a{color:var(--accent)}
+  .who-qr{margin-left:auto;text-align:center}
+  .who-qr img{width:104px;height:104px;border-radius:8px;background:#fff;padding:3px;display:block;margin:0 auto}
+  .who-qr p{margin:6px 0 0;font-size:12px;color:var(--muted)}
+  footer{margin-top:14px}
   .conf{letter-spacing:1px;font-size:12px}
   .conf.hi{color:var(--good)} .conf.mid{color:var(--warn)} .conf.lo{color:var(--muted)}
   footer{color:var(--muted);font-size:12px;margin-top:22px;text-align:center}
@@ -663,6 +686,20 @@ $template = @'
     <div class="note">
       <b>口径提醒</b>：ONI（ERSSTv5，1971–2000 基准，含全球增暖）／RONI（ERSSTv6，1991–2020 基准，已扣除 20°N–20°S 热带平均增暖，CPC 现行官方验证指标）／周 Niño3.4（OISST v2.1）三者数值不可混用；
       阈值判定与趋势比较请全程使用同一套指数。ENSO 官方指数<b>不存在日频标准产品</b>，周频已是最高时效。
+    </div>
+  </section>
+
+  <section class="author" id="author">
+    <div class="who-info">
+      <h3>作者</h3>
+      <p><b>彭桢燃</b>（Zhenran Peng）· 中国地质大学（武汉）</p>
+      <p>邮箱：<a href="mailto:zhenran.peng@cug.edu.cn">zhenran.peng@cug.edu.cn</a></p>
+      <p>课题组：地球重力与人类生活（TVGG）</p>
+      <p>GitHub：<a href="https://github.com/pengzhenran" target="_blank" rel="noopener">github.com/pengzhenran</a></p>
+    </div>
+    <div class="who-qr" id="whoQr">
+      <img id="qrImg" alt="课题组公众号二维码" decoding="async">
+      <p>课题组公众号</p>
     </div>
   </section>
 
@@ -1074,6 +1111,14 @@ document.querySelectorAll('#seasonSwitch button').forEach(btn=>{
   });
 });
 renderImpact('DJF');
+
+/* ---------- 页脚作者信息与课题组二维码 ---------- */
+(function(){
+  const img = document.getElementById('qrImg');
+  const box = document.getElementById('whoQr');
+  if (img && DATA.qrcode) { img.src = DATA.qrcode; }
+  else if (box) { box.style.display = 'none'; }   // 取不到二维码时只保留作者文字
+})();
 
 /* ---------- 绘图调用 ---------- */
 function shortDate(s){ return s.slice(2,7).replace('-','/'); }

@@ -259,11 +259,23 @@ schtasks /Delete /TN "EnsoDashboard" /F # 删除
 >    直接接管道后 `ConvertFrom-Json` 会报「传入的对象无效」。现在改为把 `gh` 输出
 >    重定向到文件、再显式按 UTF-8 读回，与运行环境无关。
 >
-> 另外：本机还有一个旧任务 `\ENSO-DataWatch`（指向 `D:\myds\mywork\enso`、
-> 从未成功运行过），与本仓库无关，可自行删除以免混淆。
->
 > 想彻底摆脱本机、改成云端每周自动跑，见 `.github/workflows/enso-pages.yml`
 > （需先 `gh auth refresh -s workflow` 授权后才能真正上传）。
+
+### 本机计划任务的分工
+
+本机有两套互不干扰的定时任务，别把它们当成重复项：
+
+| 任务 | 时间 | 脚本 | 管什么 |
+|---|---|---|---|
+| `ENSO-DataWatch` | 每天 08:00 | `Watch-EnsoData.ps1` | **小程序**：比对小程序包内数据与源数据，前进了才构建 + 上传 + 通知 |
+| `EnsoDashboard` | 每天 09:30 | `Auto-Update-Web.ps1` | **网页版**：抓数 + 生成 + 自检 + 推送 GitHub，Pages 自动重建 |
+
+两者共用同一个生成器，所以都依赖 `Update-EnsoData.ps1` 的默认行为
+（同时刷新 `report\` 与 `docs\`）。改生成器时两边都要顾到。
+
+小程序侧的细节见 `miniprogram/README.md` 与 `WECHAT-REVIEW.md`；
+由于本仓库对外只交付网页版，本文件不再展开小程序内容。
 
 ## 维护备注
 

@@ -79,6 +79,32 @@ function Get-PageFingerprint {
     return [pscustomobject]@{ Tag = $tag; N34 = $n34; Hash = $sha }
 }
 
+# ─── 发布状态：避免"每天都提交一次、内容却没变"的噪声提交 ───
+# 页头带生成时间戳，所以每次重建哈希必变，不能拿哈希判断"要不要发布"。
+# 这里分开记录两件事：已发布的**数据截止日**，以及**模板**的哈希。
+$StateFile = Join-Path $script:LogDir 'last-publish.json'
+
+function Get-PublishState {
+    if (-not (Test-Path $StateFile)) { return $null }
+    try { return ([System.IO.File]::ReadAllText($StateFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json) }
+    catch { return $null }
+}
+
+function Save-PublishState {
+    param([string]$Tag, [string]$TemplateHash)
+    try {
+        if (-not (Test-Path $script:LogDir)) { New-Item -ItemType Directory -Force -Path $script:LogDir | Out-Null }
+        $obj = [ordered]@{ tag = $Tag; templateSha = $TemplateHash; at = (Get-Date).ToString('s') }
+        [System.IO.File]::WriteAllText($StateFile, ($obj | ConvertTo-Json -Compress), (New-Object System.Text.UTF8Encoding($false)))
+    } catch { }
+}
+
+function Get-TemplateHash {
+    $tpl = Join-Path $PSScriptRoot 'dashboard.template.html'
+    if (-not (Test-Path $tpl)) { return '' }
+    return (Get-FileHash $tpl -Algorithm SHA256).Hash
+}
+
 function Run-Step {
     param([string]$Label, [scriptblock]$Body)
     Say "── $Label" 'Cyan'
@@ -116,8 +142,9 @@ foreach ($f in @($generator, $verifier, $publisher)) {
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Fail '找不到 node，自检无法运行' }
 
 # ─────────────────────────────────────────────── 1. 抓数 + 生成
+# 重建前先记下当前页面里的数据截止日，用于日志对比（是否真的前进了）
 $before = Get-PageFingerprint (Join-Path $script:Repo 'docs\index.html')
-Say ("发布前数据截止日：{0}（Niño3.4 {1}）" -f $(if ($before) { $before.Tag } else { '无' }),
+Say ("重建前数据截止日：{0}（Niño3.4 {1}）" -f $(if ($before) { $before.Tag } else { '无' }),
      $(if ($before) { $before.N34 } else { '—' }))
 
 $genArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $generator)
@@ -137,18 +164,33 @@ Run-Step '自检 docs\ 发布副本' { & node $verifier (Join-Path $script:Repo 
 Say '自检通过：35 项 × 2 份' 'Green'
 
 # ─────────────────────────────────────────────── 3. 是否需要发布
-$dataChanged = (-not $before) -or ($before.Tag -ne $after.Tag) -or ($before.N34 -ne $after.N34)
-$fileChanged = (-not $before) -or ($before.Hash -ne $after.Hash)
+# 判断依据是"相对**上次已发布**的状态有没有实质变化"，而不是"文件哈希变没变"：
+# 页头带生成时间戳，每次重建哈希必变，拿哈希判断会导致每天一次噪声提交。
+$state = Get-PublishState
+$tplHash = Get-TemplateHash
 
-if (-not $fileChanged) {
-    Say '页面内容与上次完全一致，无需发布。' 'DarkGray'
+# 上次发布记录（可能来自上一次运行）
+$lastTag = if ($state) { [string]$state.tag } else { '' }
+$lastTpl = if ($state) { [string]$state.templateSha } else { '' }
+
+$dataChanged = ($lastTag -ne $after.Tag)
+$tplChanged = ($lastTpl -ne $tplHash)
+if (-not $state) {
+    # 没有状态文件：可能是首次运行（或从旧版本升级），先建基线再决定
+    $dataChanged = $true
+    $tplChanged = $true
+    Say '没有发布状态记录，本次按"需要发布"处理并建立基线。' 'Yellow'
+}
+
+Say ("数据：上次发布 {0} → 本次 {1}　{2}" -f
+     $(if ($lastTag) { $lastTag } else { '（无记录）' }), $after.Tag,
+     $(if ($dataChanged) { '有更新' } else { '未变' }))
+Say ("模板：{0}" -f $(if ($tplChanged) { '有改动' } else { '未变' }))
+
+if (-not $Force -and -not $SkipPublish -and -not $dataChanged -and -not $tplChanged) {
+    Say '数据与模板都没有变化，跳过发布（不产生噪声提交）。' 'DarkGray'
     Say ('=' * 58) 'DarkGray'
     exit 0
-}
-if (-not $dataChanged) {
-    # 页头带生成时间戳，每次重建哈希都会变，所以不能把"哈希变了"当成"数据变了"。
-    # 数据没变但页面变了，说明模板/样式刚动过 —— 照常发布。
-    Say ("数据未变（仍为 {0}），页面内容有更新（多为模板/样式改动），照常发布。" -f $after.Tag) 'Yellow'
 }
 
 if ($SkipPublish) {
@@ -170,6 +212,9 @@ Run-Step '走 GitHub API 发布到 main' {
     # 同进程按脚本调用，错误能正常抛出并被上面捕获记录。
     & $publisher -SkipRegenerate -Message $msg
 }
+
+# 只有发布成功才更新状态文件 —— 失败时保持旧基线，下次会重试
+Save-PublishState -Tag $after.Tag -TemplateHash $tplHash
 
 Say ("已发布：{0}" -f $msg) 'Green'
 Say ('=' * 58) 'DarkGray'

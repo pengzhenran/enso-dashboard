@@ -46,14 +46,14 @@ enso/
 ## 快速开始
 
 ```powershell
-# 联网抓最新数据并重建报告
+# 联网抓最新数据并重建（**默认同时刷新 report\ 与 docs\**）
 powershell -ExecutionPolicy Bypass -File .\scripts\Update-EnsoData.ps1
 
-# 只改模板/样式、不联网，用缓存重建
+# 只改模板/样式、不联网，用缓存重建（同样会刷新两份）
 powershell -ExecutionPolicy Bypass -File .\scripts\Update-EnsoData.ps1 -NoDownload
 
-# 同时刷新发布副本 docs/index.html
-powershell -ExecutionPolicy Bypass -File .\scripts\Update-EnsoData.ps1 -NoDownload -PublishDir docs
+# 只想更新本地报告、不碰线上副本时
+powershell -ExecutionPolicy Bypass -File .\scripts\Update-EnsoData.ps1 -NoDownload -NoPublish
 
 # 生成后自动打开
 powershell -ExecutionPolicy Bypass -File .\scripts\Update-EnsoData.ps1 -Open
@@ -65,6 +65,11 @@ node .\scripts\serve-report.mjs . 8899      # → http://127.0.0.1:8899/
 node .\scripts\verify-report.mjs
 node .\scripts\verify-report.mjs docs\index.html    # 发布副本也过一遍
 ```
+
+> `-PublishDir` 的默认值就是 `docs`。这是刻意的：`report\enso_dashboard.html`（本地预览，不入库）
+> 与 `docs\index.html`（Pages 唯一源，入库）必须**始终同源**，
+> 否则一次「只跑生成器、没带参数」就会让线上停在上一周的数据。
+> 不要再写成 `-PublishDir docs` 来"提醒自己"——默认已经有了。
 
 ### 小程序版
 
@@ -294,13 +299,17 @@ DNS 能解析到 GitHub 真实 IP，但连接被阻断。
 ## 可选：每天自动更新（本机）
 
 ```powershell
-# 每天 09:30 自动抓取并重建报告（任务名 EnsoDashboard）
+# 每天 09:30 自动抓取并重建（任务名 EnsoDashboard）
+# 默认就会同时刷新 report\ 与 docs\，不需要额外加 -PublishDir
 schtasks /Create /TN "EnsoDashboard" /SC DAILY /ST 09:30 ^
   /TR "powershell -ExecutionPolicy Bypass -NoProfile -File \"D:\华为家庭存储\mywork\enso\scripts\Update-EnsoData.ps1\""
 
 schtasks /Query /TN "EnsoDashboard"     # 查看
 schtasks /Delete /TN "EnsoDashboard" /F # 删除
 ```
+
+> 注意：定时任务只负责生成，**不会自动推送**。要让线上跟着变，仍需执行
+> `scripts\Publish-ToGitHub.ps1 -SkipRegenerate`。
 
 ## 维护备注
 

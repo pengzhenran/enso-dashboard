@@ -19,24 +19,36 @@
 
 .PARAMETER PublishDir
     额外把页面写成 <PublishDir>\index.html（并放一个 .nojekyll），
-    用于 GitHub Pages 等静态托管，例如 -PublishDir docs。
+    用于 GitHub Pages 等静态托管。
+
+    **默认就是 docs** —— 也就是说本脚本每次运行都会同时刷新报告与线上副本，
+    这样不会再出现「report\ 是新数据、docs\ 还是旧数据」的两份不一致。
+    只想生成 report\ 时加 -NoPublish。
+
+.PARAMETER NoPublish
+    只写 report\enso_dashboard.html，不刷新 docs\ 发布副本。
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\scripts\Update-EnsoData.ps1
 
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File .\scripts\Update-EnsoData.ps1 -PublishDir docs
+    # 默认同时刷新 docs\；只想要本地报告时：
+    powershell -ExecutionPolicy Bypass -File .\scripts\Update-EnsoData.ps1 -NoPublish
 #>
 [CmdletBinding()]
 param(
     [string]$Root,
     [switch]$NoDownload,
     [switch]$Open,
-    [string]$PublishDir
+    [string]$PublishDir = 'docs',
+    [switch]$NoPublish
 )
 
 $ErrorActionPreference = 'Stop'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
+
+# 发布副本默认开启：report\ 与 docs\ 必须永远同源，否则容易出现「本地是新的、线上还是旧的」
+if ($NoPublish) { $PublishDir = '' }
 
 if (-not $Root) {
     if ($PSScriptRoot) { $Root = Split-Path -Parent $PSScriptRoot } else { $Root = (Get-Location).Path }
@@ -441,6 +453,7 @@ $outHtml = Join-Path $RepDir 'enso_dashboard.html'
 [System.IO.File]::WriteAllText($outHtml, $html, (New-Object System.Text.UTF8Encoding($true)))
 
 # ---------------------------------------------------------------- 静态托管副本（GitHub Pages 等）
+# 默认写入 docs\index.html：report\ 与 docs\ 必须同源，避免线上落后于本地
 $pagesHtml = ''
 if ($PublishDir) {
     $pd = if ([System.IO.Path]::IsPathRooted($PublishDir)) { $PublishDir } else { Join-Path $Root $PublishDir }

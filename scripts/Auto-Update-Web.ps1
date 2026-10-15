@@ -91,10 +91,10 @@ function Get-PublishState {
 }
 
 function Save-PublishState {
-    param([string]$Tag, [string]$TemplateHash)
+    param([string]$Tag, [string]$InputHash)
     try {
         if (-not (Test-Path $script:LogDir)) { New-Item -ItemType Directory -Force -Path $script:LogDir | Out-Null }
-        $obj = [ordered]@{ tag = $Tag; templateSha = $TemplateHash; at = (Get-Date).ToString('s') }
+        $obj = [ordered]@{ tag = $Tag; inputSha = $InputHash; at = (Get-Date).ToString('s') }
         [System.IO.File]::WriteAllText($StateFile, ($obj | ConvertTo-Json -Compress), (New-Object System.Text.UTF8Encoding($false)))
     } catch { }
 }
@@ -103,6 +103,27 @@ function Get-TemplateHash {
     $tpl = Join-Path $PSScriptRoot 'dashboard.template.html'
     if (-not (Test-Path $tpl)) { return '' }
     return (Get-FileHash $tpl -Algorithm SHA256).Hash
+}
+
+# 发布输入的组合指纹：模板 + 生成器 + 自检脚本 + README + .gitignore。
+# 只盯模板是不够的 —— 改了生成器或 README 之后，自动脚本会误判"没变化"而永不发布。
+function Get-InputHash {
+    $files = @(
+        (Join-Path $PSScriptRoot 'dashboard.template.html'),
+        (Join-Path $PSScriptRoot 'Update-EnsoData.ps1'),
+        (Join-Path $PSScriptRoot 'verify-report.mjs'),
+        (Join-Path $script:Repo 'README.md'),
+        (Join-Path $script:Repo '.gitignore')
+    )
+    $parts = @()
+    foreach ($f in $files) {
+        if (Test-Path $f) { $parts += (Get-FileHash $f -Algorithm SHA256).Hash }
+        else { $parts += 'missing' }
+    }
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes(($parts -join '|'))
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { return ([System.BitConverter]::ToString($sha.ComputeHash($bytes)) -replace '-', '') }
+    finally { $sha.Dispose() }
 }
 
 function Run-Step {
@@ -167,27 +188,32 @@ Say '自检通过：35 项 × 2 份' 'Green'
 # 判断依据是"相对**上次已发布**的状态有没有实质变化"，而不是"文件哈希变没变"：
 # 页头带生成时间戳，每次重建哈希必变，拿哈希判断会导致每天一次噪声提交。
 $state = Get-PublishState
-$tplHash = Get-TemplateHash
+$inputHash = Get-InputHash
 
 # 上次发布记录（可能来自上一次运行）
 $lastTag = if ($state) { [string]$state.tag } else { '' }
-$lastTpl = if ($state) { [string]$state.templateSha } else { '' }
+$lastInput = ''
+if ($state) {
+    # 用 PSObject.Properties 安全取属性：Set-StrictMode 下点不存在的属性会直接抛异常
+    if ($state.PSObject.Properties['inputSha']) { $lastInput = [string]$state.inputSha }
+    elseif ($state.PSObject.Properties['templateSha']) { $lastInput = [string]$state.templateSha }  # 兼容旧状态文件
+}
 
 $dataChanged = ($lastTag -ne $after.Tag)
-$tplChanged = ($lastTpl -ne $tplHash)
+$pageChanged = ($lastInput -ne $inputHash)
 if (-not $state) {
-    # 没有状态文件：可能是首次运行（或从旧版本升级），先建基线再决定
+    # 没有状态文件：首次运行（或从旧版本升级），先建基线再决定
     $dataChanged = $true
-    $tplChanged = $true
+    $pageChanged = $true
     Say '没有发布状态记录，本次按"需要发布"处理并建立基线。' 'Yellow'
 }
 
 Say ("数据：上次发布 {0} → 本次 {1}　{2}" -f
      $(if ($lastTag) { $lastTag } else { '（无记录）' }), $after.Tag,
      $(if ($dataChanged) { '有更新' } else { '未变' }))
-Say ("模板：{0}" -f $(if ($tplChanged) { '有改动' } else { '未变' }))
+Say ("页面输入（模板/生成器/自检/README）：{0}" -f $(if ($pageChanged) { '有改动' } else { '未变' }))
 
-if (-not $Force -and -not $SkipPublish -and -not $dataChanged -and -not $tplChanged) {
+if (-not $Force -and -not $SkipPublish -and -not $dataChanged -and -not $pageChanged) {
     Say '数据与模板都没有变化，跳过发布（不产生噪声提交）。' 'DarkGray'
     Say ('=' * 58) 'DarkGray'
     exit 0
@@ -214,7 +240,7 @@ Run-Step '走 GitHub API 发布到 main' {
 }
 
 # 只有发布成功才更新状态文件 —— 失败时保持旧基线，下次会重试
-Save-PublishState -Tag $after.Tag -TemplateHash $tplHash
+Save-PublishState -Tag $after.Tag -InputHash $inputHash
 
 Say ("已发布：{0}" -f $msg) 'Green'
 Say ('=' * 58) 'DarkGray'

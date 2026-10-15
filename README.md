@@ -10,6 +10,7 @@ enso/
 │  ├─ Update-EnsoData.ps1       抓取 + 解析 + 生成 HTML/CSV（主脚本）
 │  ├─ dashboard.template.html   网页版模板：样式、结构、全部交互都在这里（改版只动它）
 │  ├─ Publish-ToGitHub.ps1      走 GitHub API 发布到仓库（等价 git push，绕开被阻断的 github.com）
+│  ├─ Auto-Update-Web.ps1       计划任务用的串联脚本：抓数 → 自检 → 发布
 │  ├─ build-basemap.mjs         生成简化世界陆地底图（Natural Earth 110m → SVG path）
 │  ├─ serve-report.mjs          本地静态服务器，用于在浏览器里查看报告
 │  └─ verify-report.mjs         报告自检（35 项：数据渲染、地图、时间轴缩放/平移/点击、动画降级、页脚）
@@ -72,9 +73,9 @@ node .\scripts\verify-report.mjs docs\index.html    # 发布副本也过一遍
 |---|---|
 | 指标卡片 | 周 Niño1+2 / 3 / 3.4 距平、Niño3.4 相对值、El Niño 概率、官方状态 |
 | 官方结论 | 实时解析 CPC 诊断页的状态、Synopsis 原文与下次发布日期 |
-| 周 Niño 区海面温度 | **可缩放时间轴**折线图（五条序列，内嵌 1981-09 起全部 2353 周）+ 最近 8 周明细表 |
+| 周 Niño 区海面温度 | **可缩放时间轴**折线图（五条序列，内嵌 1981-09 起全部周数据）+ 最近 8 周明细表 |
 | **典型受影响区域（预报地图）** | 自绘全球影响区地图（**DJF / JJA 可切换**）+ 官方 CPC 全球回归图（温/降水，内嵌） |
-| 月度相对 Niño3.4 | **可缩放时间轴**柱状图（内嵌 1950-01 起全部 921 个月） |
+| 月度相对 Niño3.4 | **可缩放时间轴**柱状图（内嵌 1950-01 起全部月度数据） |
 | RONI 分位展望 | P50 中位线 + P5–P95 区间扇形图（9 个季节，点少故不缩放） |
 | 概率 / 指数 / 数据源 | El Niño–中性–La Niña 概率（条带 + 表格）、ONI 与 RONI 季节值、数据源更新节奏 |
 
@@ -126,7 +127,10 @@ node .\scripts\verify-report.mjs docs\index.html    # 发布副本也过一遍
 
 读数条实时显示"窗口 起 → 止（n / 总点数）"，单击后追加"▍选中 YYYY-MM-DD"；分区标题里写明实际数据跨度（周：1981-09-02 起；月：1950-01 起）。
 
-**可用的最长窗口就是数据本身的长度**：周指数 1981-09 起（约 45 年，2353 周），月度指数 1950-01 起（约 76 年，921 个月）。原始文件本身还有更长历史时，把 `Update-EnsoData.ps1` 里 `$chartWeeks` / `$spanMonths` 的范围放宽即可。
+**可用的最长窗口就是数据本身的长度**：周指数 1981-09 起（约 45 年，逐周增长），月度指数 1950-01 起（约 76 年，逐月增长）。原始文件本身还有更长历史时，把 `Update-EnsoData.ps1` 里 `$chartWeeks` / `$spanMonths` 的范围放宽即可。
+
+> 这里刻意**不写具体条数**——它每周/每月都在涨，写死必然过期（曾经写死"2353 周"，数据涨到 2354 周就对不上了，
+> 同样的数字还漏到了小程序界面上）。要看当前条数，用小程序「数据源与口径提醒」页，或 `node -e "console.log(require('./miniprogram/data/meta.js').span)"`。
 
 ## 数据源与更新节奏
 
@@ -190,7 +194,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\Publish-ToGitHub.ps1 -SkipReg
 
 - **公开性**：公开仓库的 Pages 站点对所有人可见；私有仓库要用 Pages 需要 GitHub Pro/Team。不想公开可改用 Cloudflare Pages、Vercel，或只把 `docs/index.html` 当附件分发。
 - 页面运行时**不抓任何数据**，不存在 CORS/接口失效问题；数据新鲜度取决于上一次发布时间（页头会显示生成时间）。
-- 单文件约 320 KB，远低于 Pages 限制；`data/raw/` 已通过 `.gitignore` 排除。
+- 单文件（`docs/index.html`）不到 0.5 MB，远低于 Pages 限制；`data/raw/` 已通过 `.gitignore` 排除。
 - 本地 `git` 的 `origin` 仍指向 https 地址，但该网络下推不上去；请用 `Publish-ToGitHub.ps1`。
 
 ## 部署到微信
@@ -215,20 +219,50 @@ DNS 能解析到 GitHub 真实 IP，但连接被阻断。
 所以[菜单脚本](scripts/Configure-WeChatMenu.ps1)只对企业认证主体或服务号可用；
 未认证账号只能用后台可视化菜单（如果后台有这个入口的话）。
 
-## 可选：每天自动更新（本机）
+## 每天自动更新（本机计划任务）
+
+`scripts/Auto-Update-Web.ps1` 把三件事串成一条链，供计划任务直接调用：
+
+```
+抓 CPC 数据 → 重建 report\ 与 docs\ → 自检 35 项 × 2 份 → 走 API 推送到 main
+```
+
+**自检不过就绝不发布**；数据与页面都没变就跳过；每步都写日志到 `data\logs\auto-update-YYYY-MM.log`。
 
 ```powershell
-# 每天 09:30 自动抓取并重建（任务名 EnsoDashboard）
-# 默认就会同时刷新 report\ 与 docs\，不需要额外加 -PublishDir
-schtasks /Create /TN "EnsoDashboard" /SC DAILY /ST 09:30 ^
-  /TR "powershell -ExecutionPolicy Bypass -NoProfile -File \"D:\华为家庭存储\mywork\enso\scripts\Update-EnsoData.ps1\""
+# 手动跑一次（联网抓数 → 生成 → 自检 → 发布）
+powershell -ExecutionPolicy Bypass -File .\scripts\Auto-Update-Web.ps1
 
-schtasks /Query /TN "EnsoDashboard"     # 查看
+# 只改了模板、不联网
+powershell -ExecutionPolicy Bypass -File .\scripts\Auto-Update-Web.ps1 -NoDownload
+
+# 只看结果、先不发布
+powershell -ExecutionPolicy Bypass -File .\scripts\Auto-Update-Web.ps1 -SkipPublish
+```
+
+已注册的计划任务（每天 09:30，任务名 `EnsoDashboard`）：
+
+```powershell
+schtasks /Create /TN "EnsoDashboard" /SC DAILY /ST 09:30 ^
+  /TR "powershell.exe -ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -File \"D:\华为家庭存储\mywork\enso\scripts\Auto-Update-Web.ps1\"" /F
+
+schtasks /Query /TN "EnsoDashboard"     # 查看（Last Result 应为 0）
+schtasks /Run   /TN "EnsoDashboard"     # 立即跑一次
 schtasks /Delete /TN "EnsoDashboard" /F # 删除
 ```
 
-> 注意：定时任务只负责生成，**不会自动推送**。要让线上跟着变，仍需执行
-> `scripts\Publish-ToGitHub.ps1 -SkipRegenerate`。
+> 计划任务的 PATH 与码页都和交互终端不同，这里踩过两个坑，改动时不要回退：
+> 1. **`gh` 靠 PATH 找不到** —— `Publish-ToGitHub.ps1` 会主动把
+>    `C:\Program Files\GitHub CLI` 补进 PATH，并用绝对路径调用。
+> 2. **中文提交信息被解成乱码** —— 任务环境是 OEM/GBK 码页，`gh` 输出 UTF-8，
+>    直接接管道后 `ConvertFrom-Json` 会报「传入的对象无效」。现在改为把 `gh` 输出
+>    重定向到文件、再显式按 UTF-8 读回，与运行环境无关。
+>
+> 另外：本机还有一个旧任务 `\ENSO-DataWatch`（指向 `D:\myds\mywork\enso`、
+> 从未成功运行过），与本仓库无关，可自行删除以免混淆。
+>
+> 想彻底摆脱本机、改成云端每周自动跑，见 `.github/workflows/enso-pages.yml`
+> （需先 `gh auth refresh -s workflow` 授权后才能真正上传）。
 
 ## 维护备注
 

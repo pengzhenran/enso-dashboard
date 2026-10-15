@@ -129,8 +129,9 @@ node .\scripts\verify-report.mjs docs\index.html    # 发布副本也过一遍
 
 **可用的最长窗口就是数据本身的长度**：周指数 1981-09 起（约 45 年，逐周增长），月度指数 1950-01 起（约 76 年，逐月增长）。原始文件本身还有更长历史时，把 `Update-EnsoData.ps1` 里 `$chartWeeks` / `$spanMonths` 的范围放宽即可。
 
-> 这里刻意**不写具体条数**——它每周/每月都在涨，写死必然过期（曾经写死"2353 周"，数据涨到 2354 周就对不上了，
-> 同样的数字还漏到了小程序界面上）。要看当前条数，用小程序「数据源与口径提醒」页，或 `node -e "console.log(require('./miniprogram/data/meta.js').span)"`。
+> 这里刻意**不写具体条数**——它每周/每月都在涨，写死必然过期（曾经写死"2353 周"，数据涨到 2354 周就对不上了）。
+> 要看当前条数，直接看页头副标题（由脚本注入），或：
+> `node -e "const t=require('fs').readFileSync('docs/index.html','utf8');console.log(/\"span\":\{[^}]*\}/.exec(t)[0])"`
 
 ## 数据源与更新节奏
 

@@ -1,0 +1,1624 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-anim="on">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#040c0c">
+<meta name="description" content="ENSO 监测工作台 · NOAA/CPC 官方周指数、月度 RONI 诊断与分位展望，一镜到底的可视化监测页">
+<title>ENSO 监测工作台 · 一镜到底</title>
+<style>
+  :root{
+    /* ---- 自然材质底色：雨林 / 深海 / 页岩 ---- */
+    --bg:#040c0c; --bg-2:#071313; --bg-3:#0a1c19;
+    --panel:rgba(11,27,26,.62); --panel-2:rgba(16,38,35,.52);
+    --line:rgba(255,255,255,.07); --line-2:rgba(255,255,255,.13);
+    --fg:#e9f3ea; --muted:#93aa9c; --muted-2:#6f8a7d;
+    /* ---- 生命色：青苔 / 翡翠 / 海水 ---- */
+    --jade:#5fd3a3; --jade-2:#2fae82; --moss:#a9c86a; --deep:#0e3b3d;
+    --sun:#f6cc7a; --clay:#e2a071; --warn:#f3c96b;
+    /* ---- 指标色（由自然色相推导，保持可辨识） ---- */
+    --n12:#e2795f; --n3:#e0a05e; --n34:#4fc3d9; --n4:#9d8ce4; --rel:#5fd3a3;
+    --bad:#e2795f; --good:#5fd3a3; --accent:#4fc3d9;
+    --r:16px; --r-s:11px;
+    --shadow:0 26px 60px -30px rgba(0,0,0,.92), 0 2px 10px -6px rgba(0,0,0,.6);
+    --sans:"Inter","HarmonyOS Sans SC","PingFang SC","Segoe UI","Microsoft YaHei",system-ui,-apple-system,sans-serif;
+    --serif:"Iowan Old Style","Palatino Linotype","Songti SC","Noto Serif SC",Georgia,serif;
+    --mono:"JetBrains Mono","Cascadia Mono",Consolas,ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.65 var(--sans);
+       letter-spacing:.004em;-webkit-font-smoothing:antialiased}
+  a{color:var(--jade);text-decoration:none} a:hover{text-decoration:underline}
+  ::selection{background:rgba(95,211,163,.28)}
+  :focus-visible{outline:2px solid var(--jade);outline-offset:3px;border-radius:6px}
+  code{background:var(--panel-2);padding:1px 6px;border-radius:5px;font-size:12.5px;font-family:var(--mono)}
+  b{font-weight:650}
+
+  /* ============================================================
+     一镜到底 · 舞台层
+     整页只有一个连续镜头：固定光晕天际线 + 地形剪影 + 章节脊柱
+     ============================================================ */
+  .aurora{position:fixed;inset:-18% -12%;z-index:0;pointer-events:none;filter:blur(58px);opacity:.6}
+  .aurora i{position:absolute;display:block;border-radius:50%;mix-blend-mode:screen;will-change:transform}
+  .aurora i:nth-child(1){width:48vw;height:34vw;left:4%;top:2%;
+    background:radial-gradient(circle at 50% 50%,rgba(95,211,163,.60),transparent 68%);
+    animation:drift-a 46s ease-in-out infinite}
+  .aurora i:nth-child(2){width:40vw;height:30vw;right:2%;top:-6%;
+    background:radial-gradient(circle at 50% 50%,rgba(79,195,217,.52),transparent 68%);
+    animation:drift-b 58s ease-in-out infinite}
+  .aurora i:nth-child(3){width:36vw;height:26vw;left:26%;bottom:-8%;
+    background:radial-gradient(circle at 50% 50%,rgba(169,200,106,.40),transparent 70%);
+    animation:drift-c 52s ease-in-out infinite}
+  .aurora i:nth-child(4){width:30vw;height:22vw;right:18%;bottom:6%;
+    background:radial-gradient(circle at 50% 50%,rgba(157,140,228,.34),transparent 70%);
+    animation:drift-a 64s ease-in-out infinite reverse}
+  @keyframes drift-a{0%,100%{transform:translate3d(0,0,0) scale(1)}
+    33%{transform:translate3d(4vw,3vh,0) scale(1.14)} 66%{transform:translate3d(-3vw,-2vh,0) scale(.94)}}
+  @keyframes drift-b{0%,100%{transform:translate3d(0,0,0) scale(1)}
+    40%{transform:translate3d(-5vw,4vh,0) scale(1.18)} 70%{transform:translate3d(2vw,-3vh,0) scale(.92)}}
+  @keyframes drift-c{0%,100%{transform:translate3d(0,0,0) scale(1.05)}
+    50%{transform:translate3d(5vw,-3vh,0) scale(1.25)}}
+  .terrain{position:fixed;left:0;right:0;bottom:0;z-index:0;pointer-events:none;line-height:0}
+  .terrain svg{width:100%;height:auto;display:block}
+  .terrain .t1{fill:rgba(9,28,25,.72)}
+  .terrain .t2{fill:rgba(7,22,20,.86)}
+  .terrain .t3{fill:rgba(4,13,12,.96)}
+  .grain{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.05;
+    background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.5) 0 1px,transparent 1px 3px);
+    mix-blend-mode:overlay}
+  .vign{position:fixed;inset:0;z-index:1;pointer-events:none;
+    background:radial-gradient(120% 90% at 50% 0%,transparent 34%,rgba(2,7,7,.62) 100%)}
+
+  /* ---- 顶部：一镜到底进度条 + 章节脊柱 ---- */
+  .rainline{position:fixed;left:0;right:0;top:0;height:2px;z-index:60;background:rgba(255,255,255,.06)}
+  .rainline i{display:block;height:100%;width:0;
+    background:linear-gradient(90deg,var(--jade),var(--accent) 46%,var(--moss) 76%,var(--sun));
+    box-shadow:0 0 16px rgba(95,211,163,.55);transition:width .12s linear}
+  .rail{position:fixed;right:12px;top:50%;transform:translateY(-50%);z-index:55;
+    display:flex;flex-direction:column;gap:9px;align-items:flex-end;pointer-events:none}
+  .rail a{pointer-events:auto;display:flex;align-items:center;gap:8px;padding:2px 0;
+    color:var(--muted-2);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;text-decoration:none}
+  .rail a span{opacity:0;transform:translateX(6px);transition:.32s;white-space:nowrap;
+    background:rgba(6,18,17,.86);border:1px solid var(--line);border-radius:999px;padding:3px 9px}
+  .rail a:hover span{opacity:1;transform:none}
+  .rail a i{width:17px;height:2px;border-radius:2px;background:rgba(255,255,255,.16);transition:.32s}
+  .rail a.on{color:var(--jade)}
+  .rail a.on i{width:30px;background:var(--jade);box-shadow:0 0 12px rgba(95,211,163,.6)}
+  @media(max-width:1080px){.rail{display:none}}
+
+  .wrap{position:relative;z-index:2;max-width:1240px;margin:0 auto;padding:0 22px 90px}
+
+  /* ============================ 首屏 ============================ */
+  .hero{position:relative;min-height:88vh;display:flex;flex-direction:column;justify-content:center;
+    padding:96px 0 46px;gap:30px;will-change:transform,opacity}
+  .hero .eyebrow{display:inline-flex;align-items:center;gap:10px;font-size:11px;letter-spacing:.34em;
+    text-transform:uppercase;color:var(--moss)}
+  .hero .eyebrow i{width:34px;height:1px;background:linear-gradient(90deg,var(--moss),transparent)}
+  h1{margin:14px 0 0;font-family:var(--serif);font-size:clamp(34px,6.2vw,70px);line-height:1.02;
+     font-weight:500;letter-spacing:-.02em}
+  h1 em{font-style:normal;background:linear-gradient(104deg,var(--jade) 0%,var(--accent) 42%,var(--moss) 100%);
+     -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero .lede{max-width:60ch;color:var(--muted);font-size:15px;margin:16px 0 0}
+  .hero .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+  .chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:999px;
+    padding:6px 13px;font-size:12.5px;color:var(--muted);
+    background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,0))}
+  .chip .dot{width:6px;height:6px;border-radius:50%;background:var(--jade);animation:soft-pulse 2.6s ease-in-out infinite}
+  .chip b{color:var(--fg);font-weight:600}
+  .hero-grid{display:grid;grid-template-columns:minmax(280px,1fr) minmax(300px,430px);gap:44px;align-items:center}
+  @media(max-width:940px){.hero-grid{grid-template-columns:1fr;gap:30px}}
+
+  /* ---- 状态环表 ---- */
+  .gauge{position:relative;width:100%;max-width:430px;aspect-ratio:1/1;margin:0 auto;
+    display:grid;place-items:center;isolation:isolate}
+  .gauge svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+  .gauge .tick{stroke:rgba(255,255,255,.14);stroke-width:1}
+  .gauge .tick.hi{stroke:rgba(226,121,95,.5);stroke-width:1.3}
+  .gauge .tick.lo{stroke:rgba(79,195,217,.5);stroke-width:1.3}
+  .gauge .arc-bg{fill:none;stroke:rgba(255,255,255,.07);stroke-width:9;stroke-linecap:round}
+  .gauge .arc{fill:none;stroke:url(#gaugeGrad);stroke-width:9;stroke-linecap:round;
+    filter:drop-shadow(0 0 12px rgba(95,211,163,.45))}
+  .gauge .orbs{fill:none;stroke:rgba(95,211,163,.22);stroke-width:1}
+  .gauge .orbs circle{transform-origin:50% 50%}
+  .gauge-core{position:relative;z-index:2;text-align:center;padding:0 8%}
+  .gauge-core .lab{font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:var(--muted)}
+  .gauge-core .num{font-family:var(--serif);font-size:clamp(46px,8.6vw,78px);line-height:1;margin:10px 0 2px;
+    font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .gauge-core .num.pos{color:#f0a58c} .gauge-core .num.neg{color:#8fdcf0}
+  .gauge-core .unit{font-size:13px;color:var(--muted);letter-spacing:.06em}
+  .gauge-core .state{margin-top:16px;display:inline-flex;align-items:center;gap:8px;border-radius:999px;
+    padding:6px 15px;font-size:12.5px;font-weight:600;border:1px solid var(--line-2);
+    background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.01))}
+  .gauge-core .state .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);
+    animation:soft-pulse 2.4s ease-in-out infinite}
+  .gauge-core .state.hot{color:#f3bda8;border-color:rgba(226,121,95,.45)}
+  .gauge-core .state.hot .dot{background:var(--n12)}
+  .gauge-core .state.cool{color:#a6e2f0;border-color:rgba(79,195,217,.45)}
+  .gauge-core .state.cool .dot{background:var(--accent)}
+  .gauge-scale{display:flex;justify-content:space-between;max-width:300px;margin:12px auto 0;
+    font-size:10.5px;color:var(--muted-2);letter-spacing:.1em}
+  @keyframes soft-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.82)}}
+  @keyframes spin-slow{to{transform:rotate(360deg)}}
+  @keyframes spin-rev{to{transform:rotate(-360deg)}}
+  .gauge .orbs.o1{animation:spin-slow 74s linear infinite}
+  .gauge .orbs.o2{animation:spin-rev 108s linear infinite}
+
+  .scroll-cue{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;
+    flex-direction:column;align-items:center;gap:8px;color:var(--muted-2);font-size:10.5px;letter-spacing:.28em}
+  .scroll-cue i{width:1px;height:44px;background:linear-gradient(180deg,var(--jade),transparent);
+    animation:cue 2.4s ease-in-out infinite}
+  @keyframes cue{0%{transform:scaleY(.3);opacity:.3}50%{transform:scaleY(1);opacity:1}100%{transform:scaleY(.3);opacity:.3}}
+
+  /* ============================ 指标卡 ============================ */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:13px;margin:8px 0 4px}
+  .card{position:relative;overflow:hidden;background:linear-gradient(165deg,var(--panel-2),var(--panel));
+    border:1px solid var(--line);border-radius:var(--r-s);padding:15px 16px 14px;
+    backdrop-filter:blur(14px);transition:transform .5s cubic-bezier(.2,.7,.3,1),border-color .5s,box-shadow .5s}
+  .card::before{content:'';position:absolute;left:14px;right:14px;top:0;height:2px;border-radius:2px;
+    background:linear-gradient(90deg,var(--accent),var(--jade));opacity:.75}
+  .card::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+    background:radial-gradient(120% 90% at 12% 0%,rgba(95,211,163,.10),transparent 60%);opacity:0;transition:opacity .5s}
+  .card:hover{transform:translateY(-4px);border-color:var(--line-2);box-shadow:var(--shadow)}
+  .card:hover::after{opacity:1}
+  .card .k{color:var(--muted);font-size:11.5px;letter-spacing:.06em}
+  .card .v{font-family:var(--serif);font-size:29px;font-weight:500;line-height:1.2;margin:6px 0 3px;
+    font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .card .t{color:var(--muted-2);font-size:11px}
+  .pos{color:var(--n12)} .neg{color:var(--accent)}
+
+  /* ============================ 章节 ============================ */
+  section{position:relative;background:linear-gradient(168deg,var(--panel),rgba(8,21,20,.72));
+    border:1px solid var(--line);border-radius:var(--r);padding:22px 24px 24px;margin-top:18px;
+    backdrop-filter:blur(16px);box-shadow:var(--shadow)}
+  section::before{content:'';position:absolute;left:24px;right:24px;top:0;height:1px;
+    background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent)}
+  h2{margin:0 0 6px;font-size:16.5px;font-weight:600;letter-spacing:.01em;
+     display:flex;align-items:baseline;flex-wrap:wrap;gap:4px}
+  h2 .act{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;
+    margin-right:9px;border-radius:7px;font-size:11px;font-family:var(--mono);font-weight:600;
+    color:#06150f;background:linear-gradient(140deg,var(--jade),var(--accent));
+    box-shadow:0 4px 14px -6px rgba(95,211,163,.85);transform:translateY(-1px)}
+  h2 .hint{color:var(--muted-2);font-weight:400;font-size:12px;margin-left:8px;letter-spacing:.02em}
+  h2 .badge{margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:3px 11px;border-radius:999px;
+    font-size:11.5px;font-weight:600;letter-spacing:.04em;color:var(--warn);
+    background:linear-gradient(180deg,rgba(246,204,122,.16),rgba(246,204,122,.05));
+    border:1px solid rgba(246,204,122,.34)}
+  h2 .badge.hot{color:#f3bda8;background:linear-gradient(180deg,rgba(226,121,95,.18),rgba(226,121,95,.05));
+    border-color:rgba(226,121,95,.4)}
+  h2 .badge.cool{color:#a6e2f0;background:linear-gradient(180deg,rgba(79,195,217,.18),rgba(79,195,217,.05));
+    border-color:rgba(79,195,217,.4)}
+  /* align-items:start 很关键：默认的 stretch 会把矮的那一列拉到和高的那列一样高，
+     于是「影响区列表」这类短内容下面会挂出一大片空白 */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr}}
+  /* 影响区：列表完整展开在左、回归图在右；左列给宽一点，
+     行高会更紧凑，两列也不会一长一短差太多 */
+  .grid3{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:22px;align-items:start}
+  .impact-col{min-width:0}
+  .impact-col .note{margin-top:12px}
+  @media(max-width:1080px){.grid3{grid-template-columns:1fr}}
+  .note{color:var(--muted);font-size:12.5px;margin-top:10px}
+  .syn{position:relative;background:linear-gradient(100deg,rgba(95,211,163,.09),rgba(79,195,217,.05));
+    border-left:2px solid var(--jade);border-radius:0 10px 10px 0;padding:13px 16px;margin-top:12px;
+    font-size:13.5px;line-height:1.8;color:#dcefe1}
+  .legend{display:flex;flex-wrap:wrap;gap:15px;color:var(--muted);font-size:12.5px;margin:10px 0 4px}
+  .legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
+
+  /* ============================ 图表 ============================ */
+  canvas{width:100%;height:266px;display:block;cursor:crosshair;touch-action:pan-y}
+  .chartbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-top:10px}
+  .chartbar .note{margin:0;font-variant-numeric:tabular-nums;font-size:11.5px;color:var(--muted-2)}
+  .switch{display:flex;gap:6px;flex-wrap:wrap}
+  .switch button,.mini{background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.015));
+    color:var(--muted);border:1px solid var(--line);border-radius:9px;padding:6px 12px;font:inherit;
+    font-size:12.5px;cursor:pointer;white-space:nowrap;transition:.28s}
+  .switch button:hover,.mini:hover{color:var(--fg);border-color:var(--line-2);transform:translateY(-1px)}
+  .switch button.on{background:linear-gradient(140deg,rgba(95,211,163,.26),rgba(79,195,217,.16));
+    color:#eaffef;border-color:rgba(95,211,163,.55);box-shadow:0 6px 20px -12px rgba(95,211,163,.9)}
+  .mini{padding:5px 10px;font-size:11.5px}
+  .figmap{margin:0 0 14px;opacity:0;transition:opacity .9s}
+  .figmap img{width:100%;border-radius:10px;border:1px solid var(--line);display:block;transition:.6s}
+  .figmap img:hover{border-color:var(--line-2);transform:translateY(-2px)}
+  .figmap figcaption{color:var(--muted-2);font-size:11.5px;margin-top:7px;line-height:1.6}
+  .grid3 .figmap:last-child{margin-bottom:0}
+  [data-anim="off"] .figmap{opacity:1}
+
+  /* ============================ 表格 ============================ */
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:13px}
+  th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  thead th{color:var(--muted-2);font-weight:600;font-size:11.5px;letter-spacing:.05em;position:sticky;
+    top:0;background:rgba(9,24,23,.95);backdrop-filter:blur(8px);z-index:1}
+  tbody tr{transition:background .3s}
+  tbody tr:hover{background:rgba(95,211,163,.07)}
+  tbody tr.rv{animation:row-in .55s cubic-bezier(.2,.7,.3,1) both}
+  @keyframes row-in{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+  tr.on{background:linear-gradient(90deg,rgba(95,211,163,.16),transparent)}
+  tr.on td:first-child{box-shadow:inset 3px 0 0 var(--jade)}
+  .scroll{overflow:auto;max-height:430px;border-radius:10px;border:1px solid var(--line)}
+  .scroll::-webkit-scrollbar{width:9px;height:9px}
+  .scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:9px}
+  .scroll::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.24)}
+
+  /* ============================ 地图 ============================ */
+  .mapbar{display:flex;flex-wrap:wrap;gap:15px;align-items:center;justify-content:space-between;margin:14px 0 10px}
+  .mapbox{position:relative;background:radial-gradient(120% 130% at 50% 0%,#0b2220,#061211 70%);
+    border:1px solid var(--line);border-radius:14px;padding:10px;overflow:hidden}
+  .mapbox::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+    box-shadow:inset 0 0 80px rgba(0,0,0,.6)}
+  #impactMap{width:100%;height:auto;max-height:62vh;display:block}
+  .ocean{fill:transparent}
+  .land{fill:#14282a;stroke:rgba(150,205,190,.32);stroke-width:.28}
+  .zone{stroke-width:0}
+  .zone.wet{fill:#4fc3d9} .zone.dry{fill:#e0a05e} .zone.warm{fill:#e2795f} .zone.cool{fill:#9d8ce4}
+  .marker{fill:#04100f;stroke:#e9f3ea;stroke-width:.42}
+  .marktext{fill:#e9f3ea;font-size:4.6px;text-anchor:middle;dominant-baseline:central;font-weight:700}
+  .nino34{fill:rgba(95,211,163,.10);stroke:#5fd3a3;stroke-width:.5;stroke-dasharray:1.8 1.4;
+    animation:nino-breathe 5.2s ease-in-out infinite}
+  @keyframes nino-breathe{0%,100%{opacity:.65}50%{opacity:1}}
+  .maplabel{fill:#8fe3c0;font-size:4.4px;text-anchor:middle;font-weight:600;letter-spacing:.02em}
+  .sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px;opacity:.6}
+  .sw.wet{background:#4fc3d9}.sw.dry{background:#e0a05e}.sw.warm{background:#e2795f}.sw.cool{background:#9d8ce4}
+  .sw.box{background:rgba(95,211,163,.12);border:1.4px dashed #5fd3a3;border-radius:2px;width:12px;height:9px}
+  /* 色块与标记：一镜到底的推进式入场 */
+  .zone{opacity:0;animation:zone-in .9s cubic-bezier(.2,.7,.3,1) forwards}
+  @keyframes zone-in{from{opacity:0;transform:scale(.86)}to{opacity:.3;transform:scale(1)}}
+  .zone.hot{opacity:.58;filter:drop-shadow(0 0 3px currentColor)}
+  g.mk{opacity:0;animation:mk-in .7s cubic-bezier(.2,.9,.3,1) forwards}
+  @keyframes mk-in{from{opacity:0;transform:translateY(2.4px) scale(.6)}to{opacity:1;transform:none}}
+  g.mk .halo{fill:none;stroke:#5fd3a3;stroke-width:.4;opacity:0}
+  g.mk.on .halo{animation:halo 2.1s ease-out infinite}
+  @keyframes halo{0%{r:3.4;opacity:.75}70%{r:9;opacity:0}100%{r:9;opacity:0}}
+  g.mk.on .marker{fill:#eaffef;stroke:#5fd3a3;stroke-width:.6}
+  .maptip{position:absolute;left:12px;bottom:12px;z-index:3;max-width:min(74%,440px);
+    background:rgba(5,16,15,.86);border:1px solid var(--line-2);border-radius:12px;padding:9px 13px;
+    backdrop-filter:blur(14px);box-shadow:var(--shadow)}
+  .maptip .tt{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .maptip .tt em{font-style:normal;font-family:var(--mono);font-size:10.5px;color:#06150f;
+    background:linear-gradient(140deg,var(--jade),var(--accent));border-radius:6px;padding:1px 6px;font-weight:700}
+  .maptip .bd{color:var(--muted);font-size:11.5px;margin-top:3px;white-space:normal}
+  .maptip .tg{margin-left:auto;font-size:11px;font-weight:600}
+  .tourbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .tourbar .cap{color:var(--muted-2);font-size:11.5px;letter-spacing:.06em}
+
+  /* ============================ 概率条 ============================ */
+  .dist{margin-top:14px;display:flex;flex-direction:column;gap:10px}
+  .dist .lbl{font-size:12px;color:var(--muted-2)}
+  .dist .bar{display:flex;height:26px;border-radius:9px;overflow:hidden;border:1px solid var(--line);
+    background:rgba(255,255,255,.03)}
+  .dist .bar span{display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:600;
+    color:#04120e;white-space:nowrap;overflow:hidden;
+    /* 用 transform 缩放而不是 width，配合 CSS 关键帧 —— 不依赖任何 JS 定时器，
+       即使动画被跳过（无头渲染 / 减少动效），条宽也已经是最终值 */
+    transform-origin:left center;
+    animation:bar-grow 1.15s cubic-bezier(.2,.8,.25,1) both}
+  @keyframes bar-grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  .dist .bar .la{background:linear-gradient(180deg,#7fd4e6,#4fc3d9)}
+  .dist .bar .ne{background:linear-gradient(180deg,#cfe0cf,#a9bfb4)}
+  .dist .bar .el{background:linear-gradient(180deg,#f0a58c,#e2795f)}
+
+  /* ============================ 页脚作者 ============================ */
+  .author{display:flex;gap:30px;align-items:flex-start;flex-wrap:wrap;margin-top:20px}
+  .who-info h3{margin:0 0 9px;font-size:13.5px;color:var(--fg);border-left:2px solid var(--jade);
+    padding-left:10px;letter-spacing:.04em}
+  .who-info p{margin:5px 0;font-size:13px;line-height:1.75;color:var(--muted)}
+  .who-info b{color:var(--fg)}
+  .who-qr{margin-left:auto;text-align:center}
+  .who-qr img{width:112px;height:112px;border-radius:12px;background:#fff;padding:4px;display:block;
+    margin:0 auto;transition:.6s}
+  .who-qr img:hover{transform:scale(1.04)}
+  .who-qr p{margin:8px 0 0;font-size:12px;color:var(--muted-2)}
+  footer{color:var(--muted-2);font-size:11.5px;margin-top:26px;text-align:center;line-height:1.9}
+  .conf{letter-spacing:1.5px;font-size:11.5px}
+  .conf.hi{color:var(--good)} .conf.mid{color:var(--warn)} .conf.lo{color:var(--muted-2)}
+
+  /* ============================================================
+     连续镜头：滚动揭示（.rv 由脚本在 IntersectionObserver 里点亮）
+     无脚本 / 静态环境不添加 .rv，内容全部可见 —— 自检照常通过
+     ============================================================ */
+  [data-anim="on"] .rv{opacity:0;transform:translateY(22px);
+    transition:opacity .95s cubic-bezier(.2,.7,.3,1),transform .95s cubic-bezier(.2,.7,.3,1)}
+  [data-anim="on"] .rv.in{opacity:1;transform:none}
+  [data-anim="on"] .rv-s{opacity:0;transform:translateY(16px) scale(.975);
+    transition:opacity .9s cubic-bezier(.2,.7,.3,1),transform .9s cubic-bezier(.2,.7,.3,1)}
+  [data-anim="on"] .rv-s.in{opacity:1;transform:none}
+  [data-anim="off"] .rv,[data-anim="off"] .rv-s{opacity:1;transform:none}
+
+  /* ---- 旁白：贴在左边缘的镜头说明 ---- */
+  .slate{position:fixed;left:20px;bottom:20px;z-index:56;pointer-events:none;max-width:min(43vw,320px);
+    background:rgba(5,16,15,.82);border:1px solid var(--line);border-radius:13px;padding:10px 14px;
+    backdrop-filter:blur(16px);box-shadow:var(--shadow);opacity:0;transform:translateY(14px);
+    transition:opacity .55s,transform .55s}
+  .slate.on{opacity:1;transform:none}
+  .slate .n{font-family:var(--mono);font-size:10px;color:var(--moss);letter-spacing:.2em}
+  .slate .s{font-size:13px;font-weight:600;margin-top:3px}
+  .slate .d{font-size:11.5px;color:var(--muted);margin-top:2px}
+  @media(max-width:900px){.slate{display:none}}
+
+  @keyframes pop-in{from{opacity:0;transform:translateY(24px) scale(.97)}to{opacity:1;transform:none}}
+  .pop{animation:pop-in 1.05s cubic-bezier(.2,.7,.3,1) both}
+
+  @media(prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}
+    *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;
+      transition-duration:.001ms !important}
+    .aurora i{animation:none}
+  }
+</style>
+</head>
+<body data-anim="on">
+
+<!-- 一镜到底 · 背景舞台 -->
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+<div class="terrain" aria-hidden="true">
+  <svg viewBox="0 0 1440 320" preserveAspectRatio="none">
+    <path class="t1" d="M0,196 C120,164 210,214 322,200 C430,187 500,132 620,146 C742,160 812,222 930,214 C1048,206 1128,152 1246,150 C1330,149 1394,170 1440,182 L1440,320 L0,320 Z"/>
+    <path class="t2" d="M0,238 C132,206 222,254 340,242 C462,230 528,176 654,190 C778,204 846,266 966,256 C1086,246 1168,196 1284,196 C1362,196 1412,212 1440,220 L1440,320 L0,320 Z"/>
+    <path class="t3" d="M0,282 C150,254 240,300 360,290 C486,280 556,232 680,244 C806,256 872,308 992,300 C1112,292 1192,254 1304,256 C1374,258 1416,270 1440,276 L1440,320 L0,320 Z"/>
+  </svg>
+</div>
+<div class="grain" aria-hidden="true"></div>
+<div class="vign" aria-hidden="true"></div>
+
+<!-- 顶部镜头进度 -->
+<div class="rainline" aria-hidden="true"><i id="rainFill"></i></div>
+<nav class="rail" id="rail" aria-label="章节导航"></nav>
+
+<div class="wrap">
+
+  <!-- ============================ 第一幕 · 首屏 ============================ -->
+  <header class="hero" id="top">
+    <div class="hero-grid">
+      <div>
+        <span class="eyebrow pop" style="animation-delay:.05s"><i></i>ENSO Monitoring Atelier</span>
+        <h1 class="pop" style="animation-delay:.13s">厄尔尼诺<br><em>南方涛动</em>监测工作台</h1>
+        <p class="lede pop" style="animation-delay:.22s">
+          来自 NOAA / CPC 的官方周 Niño 区海温距平、月度相对 Niño3.4（RONI）诊断与分位展望。
+          整页是一条连续的镜头：从官方结论，到周尺度海温，再到全球遥相关影响区。
+        </p>
+        <div class="meta pop" style="animation-delay:.3s" id="heroMeta"></div>
+      </div>
+      <div class="pop" style="animation-delay:.2s">
+        <div class="gauge" id="gauge">
+          <svg viewBox="0 0 200 200" aria-hidden="true">
+            <defs>
+              <linearGradient id="gaugeGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#5fd3a3"/>
+                <stop offset="52%" stop-color="#4fc3d9"/>
+                <stop offset="100%" stop-color="#a9c86a"/>
+              </linearGradient>
+            </defs>
+            <g id="gaugeTicks"></g>
+            <circle class="arc-bg" cx="100" cy="100" r="74"></circle>
+            <circle class="arc" id="gaugeArc" cx="100" cy="100" r="74"
+                    transform="rotate(-90 100 100)" stroke-dasharray="0 1000"></circle>
+            <g class="orbs o1"><circle cx="100" cy="18" r="52"></circle></g>
+            <g class="orbs o2"><circle cx="100" cy="182" r="62"></circle></g>
+          </svg>
+          <div class="gauge-core">
+            <div class="lab">Niño3.4 周距平</div>
+            <div class="num" id="heroVal">—</div>
+            <div class="unit" id="heroUnit">°C · OISST v2.1</div>
+            <div class="state" id="heroState"><span class="dot"></span>读取中</div>
+          </div>
+        </div>
+        <div class="gauge-scale"><span>−2.0 偏冷</span><span>0 中性</span><span>+2.0 偏暖</span></div>
+      </div>
+    </div>
+    <div class="scroll-cue" aria-hidden="true"><span>SCROLL</span><i></i></div>
+  </header>
+
+  <!-- ============================ 第二幕 · 指标与官方结论 ============================ -->
+  <div class="cards" id="cards"></div>
+
+  <section id="act-1">
+    <h2>官方结论<span class="hint">NOAA CPC ENSO Diagnostic Discussion</span><span class="badge" id="alertBadge">—</span></h2>
+    <div class="syn" id="synopsis">—</div>
+    <div class="note" id="nextDisc"></div>
+  </section>
+
+  <!-- ============================ 第三幕 · 周指数 ============================ -->
+  <section id="act-2">
+    <h2>周 Niño 区海温距平<span class="hint" id="hintWeekly">OISST v2.1 / 1991–2020 基准</span></h2>
+    <div class="legend">
+      <span><i style="background:var(--n12)"></i>Niño1+2</span>
+      <span><i style="background:var(--n3)"></i>Niño3</span>
+      <span><i style="background:var(--n34)"></i>Niño3.4</span>
+      <span><i style="background:var(--n4)"></i>Niño4</span>
+      <span><i style="background:var(--rel)"></i>Niño3.4 相对值（R 口径）</span>
+    </div>
+    <canvas id="cvWeekly"></canvas>
+    <div class="chartbar">
+      <div class="switch" id="spanWeekly">
+        <button type="button" data-years="1">1 年</button>
+        <button type="button" data-years="3" class="on">3 年</button>
+        <button type="button" data-years="5">5 年</button>
+        <button type="button" data-years="10">10 年</button>
+        <button type="button" data-years="20">20 年</button>
+        <button type="button" data-years="0">全部</button>
+      </div>
+      <span class="note" id="rangeWeekly"></span>
+      <div class="switch">
+        <button type="button" class="mini" data-full="cvWeekly">全屏</button>
+        <button type="button" class="mini" id="resetWeekly">复位</button>
+      </div>
+    </div>
+    <div class="scroll" style="margin-top:14px">
+      <table id="tblWeekly">
+        <thead><tr><th>周（中心日）</th><th>Niño1+2</th><th>Niño3</th><th>Niño3.4</th><th>Niño4</th><th>Niño3.4 相对</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================ 第四幕 · 影响区（一镜到底巡航） ============================ -->
+  <section id="act-3">
+    <h2>典型受影响区域<span class="hint">El Niño 遥相关 · 历史合成/回归倾向，非确定性预报</span></h2>
+    <div class="mapbar">
+      <div class="switch" id="seasonSwitch">
+        <button type="button" data-season="DJF" class="on">DJF（峰值季）</button>
+        <button type="button" data-season="JJA">JJA（次年夏季）</button>
+      </div>
+      <div class="legend" style="margin:0">
+        <span><i class="sw wet"></i>偏多雨 / 洪涝</span>
+        <span><i class="sw dry"></i>偏干旱</span>
+        <span><i class="sw warm"></i>偏暖</span>
+        <span><i class="sw cool"></i>偏凉</span>
+        <span><i class="sw box"></i>Niño3.4 监测区</span>
+      </div>
+      <div class="tourbar">
+        <span class="cap">巡航</span>
+        <button type="button" class="mini on" id="tourBtn" aria-pressed="true">暂停</button>
+        <button type="button" class="mini" id="zoomOut">看全球</button>
+      </div>
+    </div>
+    <div class="mapbox">
+      <svg id="impactMap" viewBox="0 0 360 180" preserveAspectRatio="xMidYMid meet" role="img"
+           aria-label="El Niño 典型影响区示意图（等经纬度投影，太平洋居中）">
+        <rect class="ocean" x="0" y="0" width="360" height="180"></rect>
+        <path id="landPath" class="land" d=""></path>
+        <g id="zoneLayer"></g>
+        <rect class="nino34" id="nino34Box" x="10" y="85" width="50" height="10" rx="1"></rect>
+        <text class="maplabel" id="nino34Label" x="35" y="82.5">Niño3.4</text>
+        <g id="markerLayer"></g>
+      </svg>
+      <div class="maptip" id="mapTip" hidden></div>
+    </div>
+    <div class="grid3" style="margin-top:16px">
+      <div class="impact-col">
+        <table id="tblImpact">
+          <thead><tr><th>#</th><th>区域</th><th>倾向</th><th>把握度</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="note" id="impactNote"></div>
+      </div>
+      <div>
+        <figure class="figmap">
+          <img id="imgTemp" alt="NOAA CPC 全球 ENSO 温度线性回归图">
+          <figcaption id="capTemp"></figcaption>
+        </figure>
+        <figure class="figmap">
+          <img id="imgPrec" alt="NOAA CPC 全球 ENSO 降水线性回归图">
+          <figcaption id="capPrec"></figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ 第五幕 · 月度与展望 ============================ -->
+  <div class="grid2">
+    <section id="act-4">
+      <h2>近月相对 Niño3.4<span class="hint" id="hintMonthly">月度 · 可缩放</span></h2>
+      <canvas id="cvMonthly" style="height:238px"></canvas>
+      <div class="chartbar">
+        <div class="switch" id="spanMonthly">
+          <button type="button" data-years="1">1 年</button>
+          <button type="button" data-years="5">5 年</button>
+          <button type="button" data-years="10" class="on">10 年</button>
+          <button type="button" data-years="30">30 年</button>
+          <button type="button" data-years="0">全部</button>
+        </div>
+        <span class="note" id="rangeMonthly"></span>
+        <div class="switch"><button type="button" class="mini" id="resetMonthly">复位</button></div>
+      </div>
+    </section>
+    <section id="act-5">
+      <h2>CPC 官方 RONI 分位展望<span class="hint">未来 9 个重叠 3 月季</span></h2>
+      <canvas id="cvFan" style="height:238px"></canvas>
+      <div class="legend">
+        <span><i style="background:var(--n34)"></i>中位（P50）</span>
+        <span><i style="background:rgba(79,195,217,.38)"></i>P5–P95 区间</span>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============================ 第六幕 · 概率与分位 ============================ -->
+  <div class="grid2">
+    <section id="act-6">
+      <h2>El Niño / 中性 / La Niña 概率<span class="hint">CPC 官方展望</span></h2>
+      <div class="dist" id="distBars"></div>
+      <div class="scroll" style="max-height:340px;margin-top:14px">
+        <table id="tblProb">
+          <thead><tr><th>季节</th><th>La Niña</th><th>中性</th><th>El Niño</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+    <section id="act-7">
+      <h2>RONI 分位数值<span class="hint">P5 / P25 / P50 / P75 / P95</span></h2>
+      <div class="scroll" style="max-height:400px">
+        <table id="tblFcst">
+          <thead><tr><th>季节</th><th>P5</th><th>P25</th><th>P50</th><th>P75</th><th>P95</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============================ 第七幕 · 季节历史 ============================ -->
+  <section id="act-8">
+    <h2>季节指数历史值<span class="hint">3 个月滑动</span></h2>
+    <div class="grid2">
+      <div class="scroll"><table id="tblOni"><thead><tr><th>ONI 季节</th><th>Anomaly</th></tr></thead><tbody></tbody></table></div>
+      <div class="scroll"><table id="tblRoni"><thead><tr><th>RONI 季节</th><th>Anomaly</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- ============================ 第八幕 · 数据源 ============================ -->
+  <section id="act-9">
+    <h2>数据源与更新节奏</h2>
+    <div class="scroll">
+      <table id="tblSrc">
+        <thead><tr><th>来源</th><th>更新频率</th><th>源站最后修改</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="note">
+      <b>口径提醒</b>：ONI（ERSSTv5，1971–2000 基准，含全球增暖）／RONI（ERSSTv6，1991–2020 基准，已扣除 20°N–20°S 热带平均增暖，CPC 现行官方验证指标）／周 Niño3.4（OISST v2.1）三者数值不可混用；
+      阈值判定与趋势比较请全程使用同一套指数。ENSO 官方指数<b>不存在日频标准产品</b>，周频已是最高时效。
+    </div>
+  </section>
+
+  <!-- ============================ 尾帧 · 作者 ============================ -->
+  <section class="author" id="author">
+    <div class="who-info">
+      <h3>作者</h3>
+      <p><b>彭桢燃</b>（Zhenran Peng）· 中国地质大学（武汉）</p>
+      <p>邮箱：<a href="mailto:zhenran.peng@cug.edu.cn">zhenran.peng@cug.edu.cn</a></p>
+      <p>课题组：地球重力与人类生活（TVGG）</p>
+      <p>GitHub：<a href="https://github.com/pengzhenran" target="_blank" rel="noopener">github.com/pengzhenran</a></p>
+    </div>
+    <div class="who-qr" id="whoQr">
+      <img id="qrImg" alt="课题组公众号二维码" decoding="async">
+      <p>课题组公众号</p>
+    </div>
+  </section>
+
+  <footer>由 <code>scripts\Update-EnsoData.ps1</code> 自动生成 · 数据版权归各来源机构所有 · 本页仅供监测参考，不构成预报结论</footer>
+</div>
+
+<!-- 一镜到底 · 解说字幕层 -->
+<aside class="slate" id="slate" aria-live="polite">
+  <div class="n" id="slateNo">SHOT 00</div>
+  <div class="s" id="slateTitle">就位</div>
+  <div class="d" id="slateDesc">滚动即推进镜头</div>
+</aside>
+
+<script>
+const DATA = __ENSO_DATA__;
+const C = {n12:'#e2795f',n3:'#e0a05e',n34:'#4fc3d9',n4:'#9d8ce4',rel:'#5fd3a3',
+           grid:'rgba(255,255,255,.09)',fg:'#e9f3ea',muted:'#93aa9c',jade:'#5fd3a3',sun:'#f6cc7a'};
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const SEASONMON = {DJF:'Dec–Feb',JFM:'Jan–Mar',FMA:'Feb–Apr',MAM:'Mar–May',AMJ:'Apr–Jun',
+                   MJJ:'May–Jul',JJA:'Jun–Aug',JAS:'Jul–Sep',ASO:'Aug–Oct',SON:'Sep–Nov',
+                   OND:'Oct–Dec',NDJ:'Nov–Jan'};
+
+function cls(v){ return v===null||v===undefined ? '' : (v>=0 ? 'pos' : 'neg'); }
+function fmt(v,d){ if(v===null||v===undefined) return '–'; return (v>0?'+':'') + v.toFixed(d===undefined?1:d); }
+
+/* ================================================================
+   0. 连续镜头引擎（一镜到底）
+   —— 全部动画统一在这里调度：一个补间器 + 一个降级开关。
+      运行环境没有 requestAnimationFrame / IntersectionObserver
+      （例如 Node 自检桩）时自动关闭，页面退化为「静态全显」，
+      DOM、表格与绘图照常渲染。
+   ================================================================ */
+const MOTION = (function(){
+  const hasRaf = typeof requestAnimationFrame === 'function';
+  const hasIO  = typeof IntersectionObserver === 'function';
+  const nowMs = () => ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now());
+  let reduce = false;
+  try {
+    reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch(e){ reduce = false; }
+  const root = document.documentElement;
+  const ok = hasRaf && !reduce;
+  if (root && root.setAttribute) root.setAttribute('data-anim', ok ? 'on' : 'off');
+  return {
+    ok: ok, io: hasIO && ok, reduce: reduce,
+    /* 统一补间：非浏览器环境下直接跳到终点 */
+    tween(ms, step, done){
+      if (!ok) { step(1); if (done) done(); return {cancel(){}}; }
+      const t0 = nowMs();
+      let id = 0, dead = false;
+      const ease = t => 1 - Math.pow(1 - t, 3);
+      function tick(){
+        if (dead) return;
+        const t = Math.min(1, (nowMs() - t0) / ms);
+        step(ease(t), t);
+        if (t < 1) id = requestAnimationFrame(tick); else if (done) done();
+      }
+      id = requestAnimationFrame(tick);
+      return {cancel(){ dead = true; if (id && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(id); }};
+    },
+    /* 数字翻牌 */
+    count(el, to, digits, ms){
+      if (!el || to === null || isNaN(to)) return;
+      const sign = to > 0 ? '+' : '';
+      if (!ok) { el.textContent = sign + to.toFixed(digits); return; }
+      MOTION.tween(ms || 1100, p => {
+        const v = to * p;
+        el.textContent = (v > 0 ? '+' : '') + v.toFixed(digits);
+      }, () => { el.textContent = sign + to.toFixed(digits); });
+    }
+  };
+})();
+
+/* 全局镜头状态：顶部进度条 / 章节脊柱 / 字幕层共用 */
+const LENS = {p:0, act:0};
+
+/* ================================================================
+   1. 首屏：状态环 + 关键数值
+   ================================================================ */
+(function(){
+  const L = DATA.weeklyLatest || {};
+  const v = (typeof L.n34 === 'number') ? L.n34 : 0;
+
+  /* 外环刻度：把 −2…+2 映射成 60 根刻度 */
+  const ticks = document.getElementById('gaugeTicks');
+  if (ticks) {
+    let s = '';
+    for (let i = 0; i <= 60; i++){
+      const a = (-96 + i * 192 / 60) * Math.PI / 180;
+      const val = -2 + i * 4 / 60;
+      const k = val >= 1.5 ? 'tick hi' : (val <= -1.5 ? 'tick lo' : 'tick');
+      const r1 = i % 5 === 0 ? 91 : 95;
+      s += '<line class="' + k + '" x1="' + (100 + Math.cos(a)*r1).toFixed(2) +
+           '" y1="' + (100 + Math.sin(a)*r1).toFixed(2) +
+           '" x2="' + (100 + Math.cos(a)*99).toFixed(2) +
+           '" y2="' + (100 + Math.sin(a)*99).toFixed(2) + '"/>';
+    }
+    ticks.innerHTML = s;
+  }
+
+  /* 主弧：−2…+2 对应半径 74 圆上 192° 的弧长 */
+  const arc = document.getElementById('gaugeArc');
+  const TOTAL = 2 * Math.PI * 74 * (192 / 360);
+  const frac = Math.max(0, Math.min(1, (v + 2) / 4));
+  if (arc) arc.setAttribute('stroke-dasharray', '0 ' + (TOTAL * 3).toFixed(1));
+  MOTION.tween(1650, p => {
+    if (arc) arc.setAttribute('stroke-dasharray', (TOTAL * frac * p).toFixed(2) + ' ' + (TOTAL * 3).toFixed(1));
+  });
+
+  const valEl = document.getElementById('heroVal');
+  if (valEl) valEl.className = 'num ' + cls(v);
+  MOTION.count(valEl, v, 2, 1500);
+
+  const st = document.getElementById('heroState');
+  const alertTxt = (DATA.status && DATA.status.alert) ? DATA.status.alert : '';
+  let word = '中性', kind = '';
+  if (v >= 0.5) { word = 'El Niño 条件'; kind = 'hot'; }
+  else if (v <= -0.5) { word = 'La Niña 条件'; kind = 'cool'; }
+  else if (v > 0.15) { word = '偏暖 · 中性区间'; kind = 'hot'; }
+  else if (v < -0.15) { word = '偏冷 · 中性区间'; kind = 'cool'; }
+  if (st) {
+    st.className = 'state ' + kind;
+    st.innerHTML = '<span class="dot"></span>' + word +
+      (alertTxt ? '　·　CPC：' + alertTxt.replace(' Advisory','') : '');
+  }
+
+  /* 首屏信息胶囊 */
+  const meta = document.getElementById('heroMeta');
+  if (meta) {
+    const parts = [];
+    parts.push('<span class="chip"><span class="dot"></span>周指数 <b>' + (L.tag || '—') + '</b></span>');
+    if (DATA.span) parts.push('<span class="chip">周序列 <b>' + DATA.span.weeklyN + '</b> 周（' +
+      DATA.span.weeklyFirst + ' → ' + DATA.span.weeklyLast + '）</span>');
+    if (DATA.status && DATA.status.issued) parts.push('<span class="chip">诊断 <b>' + DATA.status.issued + '</b></span>');
+    if (DATA.status && DATA.status.next) parts.push('<span class="chip">下次发布 <b>' + DATA.status.next + '</b></span>');
+    parts.push('<span class="chip">生成 <b>' + (DATA.generated || '—') + '</b></span>');
+    meta.innerHTML = parts.join('');
+  }
+})();
+
+/* ================================================================
+   2. 官方结论：状态徽标 / 诊断原文 / 下次发布
+   ================================================================ */
+(function(){
+  const st = DATA.status || {};
+  const badge = document.getElementById('alertBadge');
+  if (badge) {
+    badge.textContent = st.alert || 'n/a';
+    if (/El Ni/i.test(st.alert || '')) badge.className = 'badge hot';
+    else if (/La Ni/i.test(st.alert || '')) badge.className = 'badge cool';
+  }
+  const gen = document.getElementById('gen');
+  if (gen) gen.textContent = DATA.generated || '—';
+  const iss = document.getElementById('issued');
+  if (iss) iss.textContent = st.issued ? ('诊断发布日期：' + st.issued) : '';
+  const syn = document.getElementById('synopsis');
+  if (syn) syn.textContent = st.synopsis || '（未取到诊断文本，请访问 CPC 页面）';
+  const nd = document.getElementById('nextDisc');
+  if (nd) nd.textContent = st.next ? ('下次官方诊断：' + st.next) : '';
+})();
+
+/* ================================================================
+   2b. 指标卡（数值翻牌 + 交错入场）
+   ================================================================ */
+(function(){
+  const L = DATA.weeklyLatest || {};
+  const elProb = (DATA.prob && (DATA.prob.filter(p=>p.season==='SON')[0] || DATA.prob[0])) || {el:'–'};
+  const cards = [
+    {k:'周 Niño3.4 距平',   v:fmt(L.n34), cls:cls(L.n34), t:'中心日 ' + L.tag, num:(typeof L.n34==='number'?L.n34:null)},
+    {k:'周 Niño3.4 相对值', v:fmt(L.r34), cls:cls(L.r34), t:'剔除热带平均增暖', num:(typeof L.r34==='number'?L.r34:null)},
+    {k:'周 Niño3 距平',     v:fmt(L.n3),  cls:cls(L.n3),  t:'中心日 ' + L.tag, num:(typeof L.n3==='number'?L.n3:null)},
+    {k:'周 Niño1+2 距平',   v:fmt(L.n12), cls:cls(L.n12), t:'中心日 ' + L.tag, num:(typeof L.n12==='number'?L.n12:null)},
+    {k:'El Niño 概率',      v:elProb.el + '%', cls:'', color:'var(--sun)', t:'官方展望（' + elProb.season + '）'},
+    {k:'官方状态',          v:(DATA.status && DATA.status.alert ? DATA.status.alert.replace(' Advisory','') : '—'),
+     cls:'', color:'var(--moss)', t:(DATA.status && DATA.status.issued) || ''}
+  ];
+  const box = document.getElementById('cards');
+  if (!box) return;
+  box.innerHTML = cards.map((c,i) =>
+    '<div class="card rv-s" style="transition-delay:' + (i*70) + 'ms">' +
+    '<div class="k">' + c.k + '</div>' +
+    '<div class="v" style="' + (c.color ? ('color:' + c.color) : '') + '" data-cardnum="' + (c.num===null?'':c.num) + '">' +
+    (c.cls ? '<span class="' + c.cls + '">' + c.v + '</span>' : c.v) + '</div>' +
+    '<div class="t">' + c.t + '</div></div>'
+  ).join('');
+
+  /* 进入页面后把数值从 0 翻上来（文本已渲染，静态环境不受影响） */
+  if (MOTION.ok) {
+    each(qsa(box, '[data-cardnum]'), el => {
+      const raw = el.getAttribute ? el.getAttribute('data-cardnum') : null;
+      if (raw === '' || raw === null) return;
+      const to = parseFloat(raw);
+      if (isNaN(to)) return;
+      const first = el.firstChild;
+      const target = (first && first.nodeType === 1) ? first : el;
+      setTimeout(() => MOTION.count(target, to, 1, 900), 260);
+    });
+  }
+})();
+
+/* ================================================================
+   3. 通用绘图
+   ================================================================ */
+/* 选择器安全包装：静态环境（如 Node 自检桩）里元素可能没有这两个方法，
+   这里统一兜住，避免任何一处抛错打断整页脚本 */
+function qsa(scope, sel){
+  try {
+    if (!scope || typeof scope.querySelectorAll !== 'function') return [];
+    return scope.querySelectorAll(sel) || [];
+  } catch(e){ return []; }
+}
+function qs(scope, sel){
+  try {
+    if (!scope || typeof scope.querySelector !== 'function') return null;
+    return scope.querySelector(sel);
+  } catch(e){ return null; }
+}
+function each(list, fn){
+  if (!list) return;
+  for (let i = 0; i < list.length; i++) fn(list[i], i);
+}
+
+function prep(cv){
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth || 600, h = cv.clientHeight || 240;
+  cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr);
+  const g = cv.getContext('2d');
+  g.setTransform(dpr,0,0,dpr,0,0);
+  g.clearRect(0,0,w,h);
+  return {g:g, w:w, h:h, pad:{l:48,r:14,t:12,b:26}};
+}
+function drawFrame(s, ymin, ymax, xlabels){
+  const g=s.g, p=s.pad, W=s.w-p.l-p.r, H=s.h-p.t-p.b;
+  g.font='11px Inter,Segoe UI,Microsoft YaHei,sans-serif'; g.textBaseline='middle';
+  for(let i=0;i<=4;i++){
+    const y = p.t + H*i/4, val = ymax - (ymax-ymin)*i/4;
+    g.strokeStyle=C.grid; g.lineWidth=1;
+    g.beginPath(); g.moveTo(p.l, y+.5); g.lineTo(p.l+W, y+.5); g.stroke();
+    g.fillStyle=C.muted; g.textAlign='right';
+    g.fillText(val.toFixed(1), p.l-7, y);
+  }
+  if(ymin<0 && ymax>0){
+    const y0 = p.t + H*(ymax/(ymax-ymin));
+    g.strokeStyle='rgba(240,246,242,.42)'; g.setLineDash([4,3]);
+    g.beginPath(); g.moveTo(p.l,y0); g.lineTo(p.l+W,y0); g.stroke(); g.setLineDash([]);
+  }
+  g.fillStyle=C.muted; g.textAlign='center';
+  const n = xlabels.length;
+  [0, Math.floor(n/2), n-1].forEach((i,k)=>{
+    if(i<0||i>=n) return;
+    g.textAlign = k===0?'left':(k===2?'right':'center');
+    g.fillText(xlabels[i], p.l + W*(n<2?0.5:i/(n-1)), s.h-11);
+  });
+  return {W:W,H:H};
+}
+/* ================= 可缩放时间轴图表引擎 =================
+   cfg = { labels:[显示用标签], tips:[完整日期 'YYYY-…'], series:[{name,color,data,width,dash,unit}],
+           band:{lo,hi}?, type:'line'|'bar', zoom:bool, readout:'id', reset:'id',
+           spanControl:'id', defaultYears:number, minSpan:int }
+   交互：年数按钮切换窗口 · 滚轮/双指缩放 · 拖动平移 · 单击定位 · 双击或复位回默认窗口
+   连续镜头：reveal() 让曲线/柱体沿时间轴"生长"一次
+=========================================================== */
+function makeChart(cv, cfg){
+  const PAD = {l:48, r:14, t:12, b:26};
+  const n = cfg.labels.length;
+  const st = {lo:0, hi:n-1, mark:null, hover:null};
+  let geo = null, drag = null, dragged = false, rev = 1, revTween = null;
+
+  const clampWin = (lo, hi) => {
+    const minSpan = Math.min(cfg.minSpan || 8, n-1);
+    const span = Math.max(minSpan, Math.min(n-1, Math.round(hi-lo)));
+    // 必须取整：小数索引会让数组取值变成 undefined，整张图会静默失效
+    st.lo = Math.max(0, Math.min(n-1-span, Math.round(lo)));
+    st.hi = st.lo + span;
+  };
+
+  // 纯字符串运算求"往前 N 年"的截断日期，避免 Date 解析与时区问题
+  const shiftYears = (tip, years) => (parseInt(tip.slice(0, 4), 10) - years) + tip.slice(4);
+  const setSpan = (years) => {
+    if (!years) { st.lo = 0; st.hi = n-1; }
+    else {
+      const cut = shiftYears(cfg.tips[n-1], years);
+      let i = cfg.tips.findIndex(t => t >= cut);
+      if (i < 0) i = 0;
+      st.lo = i; st.hi = n-1;
+    }
+    clampWin(st.lo, st.hi);
+  };
+  const px = (e) => { const r = cv.getBoundingClientRect(); return (e.clientX-r.left)*(cv.clientWidth/(r.width||1)); };
+  const idxAt = (x) => {
+    const W = geo.W;
+    const t = Math.max(0, Math.min(1, (x-PAD.l)/W));
+    return Math.max(st.lo, Math.min(st.hi, Math.round(st.lo + t*(st.hi-st.lo))));
+  };
+
+  function tooltip(g, x, y, lines, color){
+    g.font = '11.5px Inter,Segoe UI,Microsoft YaHei,sans-serif';
+    g.textBaseline = 'middle';
+    let w = 0;
+    lines.forEach(l => { w = Math.max(w, g.measureText(l.t).width); });
+    const bw = w + 18, bh = lines.length*15 + 12;
+    let bx = x + 12; if (bx + bw > geo.w - 4) bx = x - 12 - bw;
+    let by = Math.max(4, Math.min(geo.h - bh - 4, y - bh/2));
+    g.fillStyle = 'rgba(5,16,15,.95)';
+    g.strokeStyle = color || C.grid; g.lineWidth = 1;
+    g.beginPath();
+    if (g.roundRect) { g.roundRect(bx, by, bw, bh, 8); } else { g.rect(bx, by, bw, bh); }
+    g.fill(); g.stroke();
+    g.textAlign = 'left';
+    lines.forEach((l, i) => {
+      g.fillStyle = l.c || C.fg;
+      g.fillText(l.t, bx + 9, by + 13 + i*15);
+    });
+  }
+
+  function render(){
+    clampWin(st.lo, st.hi);
+    const s = prep(cv);
+    geo = {w:s.w, h:s.h};
+    const p = s.pad, g = s.g;
+    const vis = [];
+    for (let i = st.lo; i <= st.hi; i++) vis.push(i);
+    const labels = vis.map(i => cfg.labels[i]);
+    const series = cfg.series.map(se => {
+      const o = {};
+      for (const k in se) o[k] = se[k];
+      o.data = vis.map(i => se.data[i]);
+      return o;
+    });
+    const band = cfg.band ? {lo: vis.map(i => cfg.band.lo[i]), hi: vis.map(i => cfg.band.hi[i])} : null;
+
+    let vals = [];
+    series.forEach(se => { vals = vals.concat(se.data.filter(v => v !== null && v !== undefined)); });
+    if (band) vals = vals.concat(band.lo.filter(v=>v!=null), band.hi.filter(v=>v!=null));
+    if (!vals.length) return;
+    let ymin = Math.min.apply(null, vals), ymax = Math.max.apply(null, vals);
+    if (cfg.type === 'bar') { ymin = Math.min(ymin, -0.5); ymax = Math.max(ymax, 0.5); }
+    const sp = (ymax - ymin) || 1; ymin -= sp*0.12; ymax += sp*0.12;
+
+    const f = drawFrame(s, ymin, ymax, labels);
+    geo.W = f.W; geo.H = f.H; geo.pad = p; geo.ymin = ymin; geo.ymax = ymax;
+    const m = labels.length;
+    const X = i => p.l + (m < 2 ? f.W/2 : f.W*i/(m-1));
+    const Y = v => p.t + f.H*(ymax - v)/(ymax - ymin);
+
+    /* —— 连续镜头：生长阶段的整帧淡入（rev 到 1 后完全不影响） —— */
+    const fx = Math.max(0, Math.min(1, rev));
+    if (fx < 1) g.globalAlpha = 0.14 + 0.86*fx;
+
+    if (band) {
+      g.fillStyle = 'rgba(79,195,217,.17)'; g.beginPath();
+      let started = false;
+      for (let i=0;i<m;i++){ if (band.hi[i]==null) continue; const x=X(i),y=Y(band.hi[i]);
+        if(!started){g.moveTo(x,y);started=true;} else g.lineTo(x,y); }
+      for (let i=m-1;i>=0;i--){ if (band.lo[i]==null) continue; g.lineTo(X(i),Y(band.lo[i])); }
+      g.closePath(); g.fill();
+    }
+
+    if (cfg.type === 'bar') {
+      const bw = Math.max(1.2, f.W/m*0.68);
+      const y0 = Y(0);
+      for (let i=0;i<m;i++){
+        const v = series[0].data[i]; if (v==null) continue;
+        const x = p.l + f.W*(i+0.5)/m - bw/2;
+        g.fillStyle = v>=1.5?'#e2795f' : (v>=0.5?'#e0a05e' : (v<=-0.5?'#4fc3d9':'#7c948a'));
+        const y = Y(v);
+        g.fillRect(x, Math.min(y,y0), bw, Math.max(1, Math.abs(y-y0)));
+      }
+    } else {
+      series.forEach(se => {
+        g.strokeStyle = se.color; g.lineWidth = se.width || 1.8;
+        g.lineJoin = 'round'; g.lineCap = 'round';
+        if (se.dash) g.setLineDash(se.dash);
+        g.beginPath(); let started = false;
+        for (let i=0;i<m;i++){
+          const v = se.data[i]; if (v==null){started=false;continue;}
+          const x = X(i), y = Y(v);
+          if(!started){g.moveTo(x,y);started=true;} else g.lineTo(x,y);
+        }
+        g.stroke(); g.setLineDash([]);
+      });
+    }
+    g.globalAlpha = 1;
+
+    // ---- 定位线 / 悬停：显示该点日期与数值 ----
+    const active = (st.mark != null) ? st.mark : st.hover;
+    if (active != null && active >= st.lo && active <= st.hi) {
+      const i = active - st.lo, x = X(i);
+      g.strokeStyle = st.mark != null ? 'rgba(233,243,234,.85)' : 'rgba(150,190,175,.6)';
+      g.lineWidth = 1; g.setLineDash([3,3]);
+      g.beginPath(); g.moveTo(x, p.t); g.lineTo(x, p.t + f.H); g.stroke(); g.setLineDash([]);
+      if (cfg.type !== 'bar') {
+        series.forEach(se => {
+          const v = se.data[i]; if (v==null) return;
+          g.fillStyle = se.color; g.beginPath(); g.arc(x, Y(v), 3, 0, Math.PI*2); g.fill();
+        });
+      }
+      const lines = [{t: cfg.tips[active], c: C.fg}];
+      cfg.series.forEach(se => {
+        const v = se.data[active];
+        lines.push({t: se.name + '  ' + (v==null ? '–' : (v>0?'+':'') + v.toFixed(se.digits == null ? 1 : se.digits) + (se.unit||'')),
+                    c: se.color});
+      });
+      const mid = cfg.type === 'bar' ? Y(series[0].data[i] == null ? 0 : series[0].data[i]) : Y((ymin+ymax)/2);
+      tooltip(g, x, mid, lines, C.grid);
+    }
+
+    if (cfg.readout) {
+      const el = document.getElementById(cfg.readout);
+      if (el) {
+        const a = cfg.tips[st.lo], b = cfg.tips[st.hi];
+        let txt = '窗口 ' + a + ' → ' + b + '（' + (st.hi-st.lo+1) + ' / ' + n + ' 点）';
+        if (st.mark != null) txt += '　▍选中 ' + cfg.tips[st.mark];
+        txt += '　· 年数按钮 / 滚轮缩放 · 拖动平移 · 单击定位 · 双击复位';
+        el.textContent = txt;
+      }
+    }
+  }
+
+  /* —— 连续镜头：沿时间轴方向的"生长"动画 —— */
+  function reveal(){
+    if (!MOTION.ok) { rev = 1; render(); return; }
+    if (revTween) revTween.cancel();
+    rev = 0;
+    revTween = MOTION.tween(1500, p => { rev = p; render(); }, () => { rev = 1; render(); });
+  }
+
+  if (cfg.zoom) {
+    cv.addEventListener('wheel', e => {
+      e.preventDefault();
+      const x = px(e);
+      const r = cv.getBoundingClientRect();
+      const t = Math.max(0, Math.min(1, (x - PAD.l) / (geo.W || 1)));
+      const span = st.hi - st.lo;
+      const anchor = st.lo + t*span;
+      const factor = e.deltaY > 0 ? 1.2 : 0.83;
+      const nspan = Math.max(Math.min(cfg.minSpan || 8, n-1), Math.min(n-1, span*factor));
+      clampWin(anchor - t*nspan, anchor - t*nspan + nspan);
+      render();
+    }, {passive:false});
+
+    cv.addEventListener('mousedown', e => { drag = {x:e.clientX, lo:st.lo, hi:st.hi}; dragged = false; cv.style.cursor='grabbing'; });
+    window.addEventListener('mouseup', () => {
+      if (drag) { drag = null; cv.style.cursor = 'crosshair'; }
+    });
+    cv.addEventListener('mousemove', e => {
+      const x = px(e);
+      if (drag) {
+        const dx = e.clientX - drag.x;
+        if (Math.abs(dx) > 2) dragged = true;
+        const r = cv.getBoundingClientRect();
+        const plotW = (r.width||1) - PAD.l - PAD.r;
+        const span = drag.hi - drag.lo;
+        const shift = -dx / plotW * span;
+        clampWin(drag.lo + shift, drag.lo + shift + span);
+        render();
+        return;
+      }
+      st.hover = idxAt(x);
+      render();
+    });
+    cv.addEventListener('mouseleave', () => { st.hover = null; render(); });
+    cv.addEventListener('dblclick', () => { resetView(); });
+    cv.style.cursor = 'crosshair';
+
+    const rb = cfg.reset ? document.getElementById(cfg.reset) : null;
+    if (rb) rb.addEventListener('click', () => { resetView(); });
+
+    // 年数按钮：切换窗口长度（以最新数据为右端）
+    if (cfg.spanControl) {
+      const btns = qsa(document, '#' + cfg.spanControl + ' button');
+      if (btns.length) {
+        each(btns, b => b.addEventListener('click', () => {
+          each(btns, x => { if (x.classList) x.classList.remove('on'); });
+          if (b.classList) b.classList.add('on');
+          setSpan(+(b.dataset ? b.dataset.years : 0));
+          render();
+        }));
+      }
+    }
+  }
+
+  function resetView(){
+    setSpan(cfg.zoom ? (cfg.defaultYears || 0) : 0);
+    st.mark = null;
+    render();
+  }
+
+  cv.addEventListener('click', e => {
+    const i = idxAt(px(e));
+    if (dragged) { dragged = false; return; }
+    st.mark = (st.mark === i) ? null : i;
+    render();
+  });
+
+  /* 触摸：单指拖动平移、双指捏合缩放（移动端也有连续手感） */
+  let pinch = null;
+  cv.addEventListener('touchstart', e => {
+    if (e.touches && e.touches.length === 2) {
+      pinch = {d: Math.abs(e.touches[0].clientX - e.touches[1].clientX),
+               cx: (e.touches[0].clientX + e.touches[1].clientX) / 2};
+    } else if (e.touches && e.touches.length === 1 && cfg.zoom) {
+      drag = {x:e.touches[0].clientX, lo:st.lo, hi:st.hi}; dragged = false;
+    }
+  }, {passive:true});
+  cv.addEventListener('touchmove', e => {
+    if (!e.touches) return;
+    if (pinch && e.touches.length === 2) {
+      const d = Math.abs(e.touches[0].clientX - e.touches[1].clientX);
+      if (pinch.d > 8) {
+        const t = Math.max(0, Math.min(1, (px({clientX:pinch.cx}) - PAD.l) / (geo.W || 1)));
+        const span = st.hi - st.lo;
+        const nspan = Math.max(Math.min(cfg.minSpan || 8, n-1),
+                               Math.min(n-1, span * (pinch.d / Math.max(8, d))));
+        const anchor = st.lo + t*span;
+        clampWin(anchor - t*nspan, anchor - t*nspan + nspan);
+        render();
+      }
+      pinch.d = d;
+      if (e.preventDefault) e.preventDefault();
+      return;
+    }
+    if (drag && e.touches.length === 1) {
+      const dx = e.touches[0].clientX - drag.x;
+      if (Math.abs(dx) > 3) dragged = true;
+      const r = cv.getBoundingClientRect();
+      const plotW = (r.width||1) - PAD.l - PAD.r;
+      const span = drag.hi - drag.lo;
+      const shift = -dx / plotW * span;
+      clampWin(drag.lo + shift, drag.lo + shift + span);
+      render();
+    }
+  }, {passive:false});
+  cv.addEventListener('touchend', () => { pinch = null; drag = null; }, {passive:true});
+
+  if (cfg.defaultYears) setSpan(cfg.defaultYears);
+  render();
+  return {render: render, state: st, setSpan: setSpan, reveal: reveal, cv: cv};
+}
+
+/* ---------- 表格渲染（逐行揭示） ---------- */
+function rowsHTML(list, mapFn){
+  return list.map((r,i) => {
+    const tds = mapFn(r);
+    return '<tr' + (MOTION.ok ? (' class="rv" style="animation-delay:' + Math.min(i*22, 700) + 'ms"') : '') + '>' + tds + '</tr>';
+  }).join('');
+}
+
+document.querySelector('#tblWeekly tbody').innerHTML = rowsHTML(DATA.weeklyTable.slice().reverse(), r =>
+  '<td>'+r.week+'</td><td class="'+cls(r.n12)+'">'+fmt(r.n12)+'</td><td class="'+cls(r.n3)+'">'+fmt(r.n3)+
+  '</td><td class="'+cls(r.n34)+'">'+fmt(r.n34)+'</td><td class="'+cls(r.n4)+'">'+fmt(r.n4)+
+  '</td><td class="'+cls(r.r34)+'">'+fmt(r.r34)+'</td>');
+
+document.querySelector('#tblProb tbody').innerHTML = rowsHTML(DATA.prob, r =>
+  '<td>'+r.season+' <span style="color:var(--muted-2)">'+(SEASONMON[r.season]||'')+'</span></td><td>'+r.la+
+  '%</td><td>'+r.neu+'%</td><td style="font-weight:600">'+r.el+'%</td>');
+
+document.querySelector('#tblFcst tbody').innerHTML = rowsHTML(DATA.fcst, r =>
+  '<td>'+r.season+' <span style="color:var(--muted-2)">'+(SEASONMON[r.season]||'')+'</span></td><td>'+
+  r.p05.toFixed(2)+'</td><td>'+r.p25.toFixed(2)+'</td><td style="font-weight:600">'+r.p50.toFixed(2)+
+  '</td><td>'+r.p75.toFixed(2)+'</td><td>'+r.p95.toFixed(2)+'</td>');
+
+document.querySelector('#tblOni tbody').innerHTML = rowsHTML(DATA.oniSeasonal.slice().reverse(), r =>
+  '<td>'+r.season+'</td><td class="'+cls(r.v)+'">'+fmt(r.v,2)+'</td>');
+document.querySelector('#tblRoni tbody').innerHTML = rowsHTML(DATA.roniSeasonal.slice().reverse(), r =>
+  '<td>'+r.season+'</td><td class="'+cls(r.v)+'">'+fmt(r.v,2)+'</td>');
+
+document.querySelector('#tblSrc tbody').innerHTML = DATA.sources.map(s =>
+  '<tr><td><a href="'+s.url+'" target="_blank" rel="noopener">'+s.name+'</a></td><td style="text-align:right">'+
+  s.cadence+'</td><td style="text-align:right;color:var(--muted-2)">'+(s.updated||'—')+'</td></tr>').join('');
+
+/* ---------- 概率走势条：把表里的第一手信息画成一眼能读的形状 ----------
+   宽度与文字在渲染时就写死，生长效果交给 CSS 关键帧（见 .dist .bar span），
+   这样即使动画被跳过，条也一定是满宽、有数字的。 */
+(function(){
+  const box = document.getElementById('distBars');
+  if (!box || !DATA.prob || !DATA.prob.length) return;
+  box.innerHTML = DATA.prob.map((r,i) =>
+    '<div><div class="lbl">' + r.season + '　<span style="color:var(--muted-2)">' + (SEASONMON[r.season]||'') + '</span></div>' +
+    '<div class="bar" data-i="' + i + '">' +
+      '<span class="la" style="width:' + r.la + '%;animation-delay:' + (i*45+120) + 'ms">' + r.la + '%</span>' +
+      '<span class="ne" style="width:' + r.neu + '%;animation-delay:' + (i*45+180) + 'ms">' + r.neu + '%</span>' +
+      '<span class="el" style="width:' + r.el + '%;animation-delay:' + (i*45+240) + 'ms">' + r.el + '%</span>' +
+    '</div></div>').join('');
+})();
+
+/* ---------- 典型影响区地图 ---------- */
+// lon/lat 为区域框的 [最小, 最大]；type: wet 多雨 / dry 干旱 / warm 偏暖 / cool 偏凉
+// conf: 3 高（多数事件一致）2 中 1 低（文献中差异较大）
+const IMPACTS = {
+  DJF: [
+    {n:1,  name:'秘鲁—厄瓜多尔沿海',        lon:[-85,-75], lat:[-10, 2], type:'wet',  conf:3, note:'异常多雨、洪涝与山洪（东部型事件最典型）'},
+    {n:2,  name:'阿根廷北部—巴西南部—乌拉圭', lon:[-62,-48], lat:[-35,-22], type:'wet',  conf:3, note:'雨季降水偏多、河流水位上升'},
+    {n:3,  name:'巴西东北部',               lon:[-48,-35], lat:[-12, -2], type:'dry',  conf:2, note:'旱季更干，干旱风险上升'},
+    {n:4,  name:'中美洲—加勒比',            lon:[-92,-60], lat:[  8, 20], type:'dry',  conf:2, note:'降水偏少、暖冬'},
+    {n:5,  name:'美国南部—墨西哥湾沿岸',     lon:[-110,-82], lat:[ 25, 33], type:'wet',  conf:3, note:'风暴路径偏南，多雨偏冷'},
+    {n:6,  name:'加利福尼亚—美西南',        lon:[-125,-113], lat:[ 33, 42], type:'wet',  conf:2, note:'冬季降水偏多（受事件型态影响较大）'},
+    {n:7,  name:'美国北部—加拿大南部',       lon:[-130,-70], lat:[ 45, 60], type:'warm', conf:3, note:'显著偏暖，取暖度日下降'},
+    {n:8,  name:'东非（肯尼亚—坦桑尼亚）',   lon:[ 32, 42], lat:[ -8,  8], type:'wet',  conf:2, note:'短雨季降水偏多'},
+    {n:9,  name:'南部非洲（津巴布韦—南非北部）', lon:[20, 38], lat:[-28,-12], type:'dry', conf:3, note:'雨季推迟/降水偏少，粮食风险'},
+    {n:10, name:'印尼—马来西亚—菲律宾南部',  lon:[ 95,135], lat:[ -8,  8], type:'dry',  conf:3, note:'对流东移，干旱与森林火险升高'},
+    {n:11, name:'澳大利亚东部',             lon:[135,155], lat:[-35,-12], type:'dry',  conf:3, note:'偏干偏热、热浪与火险'},
+    {n:12, name:'印度南部—斯里兰卡',         lon:[ 72, 85], lat:[  5, 18], type:'wet',  conf:2, note:'东北季风降水偏多'},
+    {n:13, name:'中国华南—江南',            lon:[105,122], lat:[ 20, 32], type:'wet',  conf:2, note:'冬春水汽输送偏强、阴雨偏多；北方多暖冬'}
+  ],
+  JJA: [
+    {n:1,  name:'印度',                     lon:[ 70, 90], lat:[  8, 30], type:'dry',  conf:2, note:'季风偏弱、降水偏少（事件衰减年更明显）'},
+    {n:2,  name:'印尼—澳大利亚北部',         lon:[ 95,140], lat:[-12,  5], type:'dry',  conf:3, note:'干旱延续至次年旱季'},
+    {n:3,  name:'澳大利亚东部',             lon:[140,155], lat:[-38,-15], type:'dry',  conf:2, note:'降水偏少、霜冻风险变化'},
+    {n:4,  name:'美国中部—南部',            lon:[-105,-85], lat:[30, 45], type:'wet',  conf:2, note:'强对流与洪涝偏多'},
+    {n:5,  name:'中国长江流域',             lon:[105,122], lat:[ 25, 35], type:'wet',  conf:2, note:'梅雨偏强、洪涝风险上升'},
+    {n:6,  name:'日本—东北亚',              lon:[130,145], lat:[ 32, 45], type:'cool', conf:2, note:'夏季偏凉、日照偏少'},
+    {n:7,  name:'加勒比—中美洲',            lon:[-90,-60], lat:[ 10, 22], type:'dry',  conf:2, note:'飓风活动受抑制、降水偏少'},
+    {n:8,  name:'亚马逊北部',               lon:[-70,-55], lat:[ -5,  5], type:'dry',  conf:1, note:'降水偏少、火险升高'},
+    {n:9,  name:'西非萨赫勒',               lon:[-15, 15], lat:[ 10, 18], type:'wet',  conf:1, note:'季风降水偏多（信噪比较低）'},
+    {n:10, name:'阿根廷北部—巴西南部',       lon:[-65,-48], lat:[-38,-22], type:'wet',  conf:2, note:'冬季降水偏多'}
+  ]
+};
+const TYPE_CN = {wet:'偏多雨', dry:'偏干旱', warm:'偏暖', cool:'偏凉'};
+const TYPE_COLOR = {wet:'var(--n34)', dry:'var(--warn)', warm:'var(--bad)', cool:'var(--n4)'};
+const CONF = {3:['●●●','hi','高'], 2:['●●○','mid','中'], 1:['●○○','lo','低']};
+const SEASON_CN = {DJF:'DJF（12–2 月，峰值季）', JJA:'JJA（6–8 月，次年夏季）'};
+
+/* —— 一镜到底的地图巡航：镜头在区域之间连续推拉 —— */
+const MAP = {
+  season:'DJF', list:[], idx:-1, playing:true, hovering:false, timer:null, tw:null,
+  home:[0,0,360,180], cur:[0,0,360,180], svg:null, tip:null, dwell:2500
+};
+
+function zoneCenter(z){
+  return [(z.lon[0]+z.lon[1])/2 + 180, 90 - (z.lat[0]+z.lat[1])/2];
+}
+/* 按区域外扩取景框，比例固定 2:1 与 viewBox 一致，避免画面拉伸 */
+function frameOf(z){
+  const w0 = (z.lon[1]-z.lon[0]) + 46, h0 = (z.lat[1]-z.lat[0]) + 34;
+  let w = Math.max(w0, h0*2);
+  w = Math.max(52, Math.min(250, w));
+  const h = w/2;
+  const c = zoneCenter(z);
+  let x = c[0] - w/2, y = c[1] - h/2;
+  x = Math.max(-14, Math.min(374 - w, x));
+  y = Math.max(-12, Math.min(192 - h, y));
+  return [x, y, w, h];
+}
+function setVB(v){
+  if (MAP.svg) MAP.svg.setAttribute('viewBox', v.map(a => a.toFixed(2)).join(' '));
+}
+function flyTo(target, ms){
+  if (MAP.tw) { MAP.tw.cancel(); MAP.tw = null; }
+  const from = MAP.cur.slice();
+  if (!MOTION.ok) { MAP.cur = target.slice(); setVB(target); return; }
+  MAP.tw = MOTION.tween(ms || 1150, p => {
+    MAP.cur = from.map((a,i) => a + (target[i]-a)*p);
+    setVB(MAP.cur);
+  }, () => { MAP.cur = target.slice(); setVB(target); MAP.tw = null; });
+}
+function highlight(i){
+  MAP.idx = i;
+  each(qsa(MAP.svg, 'g.mk'), (g2,k) => { if (g2.classList) g2.classList.toggle('on', k===i); });
+  each(qsa(MAP.svg, 'rect.zone'), (r,k) => { if (r.classList) r.classList.toggle('hot', k===i); });
+  each(qsa(document, '#tblImpact tbody tr'), (tr,k) => { if (tr.classList) tr.classList.toggle('on', k===i); });
+  const z = MAP.list[i];
+  const tip = MAP.tip;
+  if (tip && z) {
+    tip.hidden = false;
+    tip.innerHTML = '<div class="tt"><em>' + z.n + '</em>' + z.name +
+      '<span class="tg" style="color:' + TYPE_COLOR[z.type] + '">' + TYPE_CN[z.type] + '</span></div>' +
+      '<div class="bd">' + z.note + '　把握度 ' + CONF[z.conf][0] + '（' + CONF[z.conf][2] + '）</div>';
+  }
+}
+function tourStep(){
+  if (!MAP.list.length) return;
+  const next = (MAP.idx + 1) % MAP.list.length;
+  highlight(next);
+  flyTo(frameOf(MAP.list[next]), next === 0 ? 1500 : 1050);
+}
+function tourOn(on){
+  MAP.playing = !!on;
+  const b = document.getElementById('tourBtn');
+  if (b) {
+    b.textContent = on ? '暂停' : '继续';
+    b.className = 'mini' + (on ? ' on' : '');
+    if (b.setAttribute) b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+}
+function tourStart(){
+  tourStop();
+  if (!MOTION.ok) return;
+  MAP.timer = setInterval(() => {
+    if (MAP.playing && !MAP.hovering) tourStep();
+  }, MAP.dwell);
+}
+function tourStop(){ if (MAP.timer) { clearInterval(MAP.timer); MAP.timer = null; } }
+
+function renderImpact(season){
+  MAP.season = season;
+  const list = IMPACTS[season] || [];
+  MAP.list = list;
+  document.getElementById('zoneLayer').innerHTML = list.map((z,i)=>{
+    const x = z.lon[0]+180, y = 90-z.lat[1], w = z.lon[1]-z.lon[0], h = z.lat[1]-z.lat[0];
+    return '<rect class="zone '+z.type+'" x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+
+           '" height="'+h.toFixed(1)+'" rx="1.5" style="animation-delay:'+(i*95)+'ms"></rect>';
+  }).join('');
+  document.getElementById('markerLayer').innerHTML = list.map((z,i)=>{
+    const c = zoneCenter(z);
+    return '<g class="mk" style="animation-delay:'+(i*95+180)+'ms">'+
+           '<circle class="halo" cx="'+c[0].toFixed(1)+'" cy="'+c[1].toFixed(1)+'" r="3.4"></circle>'+
+           '<circle class="marker" cx="'+c[0].toFixed(1)+'" cy="'+c[1].toFixed(1)+'" r="3.3"></circle>'+
+           '<text class="marktext" x="'+c[0].toFixed(1)+'" y="'+c[1].toFixed(1)+'">'+z.n+'</text></g>';
+  }).join('');
+  document.querySelector('#tblImpact tbody').innerHTML = list.map((z,i)=>{
+    const c = CONF[z.conf];
+    return '<tr data-i="'+i+'"><td style="color:var(--muted-2)">'+z.n+'</td><td>'+z.name+
+           '<div style="color:var(--muted-2);font-size:11.5px;font-weight:400;white-space:normal">'+z.note+'</div></td>'+
+           '<td style="color:'+TYPE_COLOR[z.type]+'">'+TYPE_CN[z.type]+'</td>'+
+           '<td><span class="conf '+c[1]+'" title="'+"把握度：" + c[2]+'">'+c[0]+'</span></td></tr>';
+  }).join('');
+
+  const im = (DATA.maps && DATA.maps[season]) || {};
+  const t = document.getElementById('imgTemp'), p = document.getElementById('imgPrec');
+  t.src = im.temp || ''; p.src = im.precip || '';
+  t.style.display = im.temp ? 'block' : 'none';
+  p.style.display = im.precip ? 'block' : 'none';
+  document.getElementById('capTemp').textContent = '图：NOAA/CPC 全球 ENSO 温度线性回归 · ' + SEASON_CN[season];
+  document.getElementById('capPrec').textContent = '图：NOAA/CPC 全球 ENSO 降水线性回归 · ' + SEASON_CN[season]+
+    '　（红/蓝＝暖/冷或干/湿倾向；斜线区表示相关显著）';
+  document.getElementById('impactNote').innerHTML =
+    '倾向来自历史 El Niño 事件的合成与线性回归（CPC 全球回归、Ropelewski &amp; Halpert 1987/1996 等），'+
+    '表示<b>发生概率的相对偏移</b>而非确定结果；事件强度、空间型（东部型／中部型）与年代际背景都会改变分布。'+
+    '底图为 Natural Earth 110m 简化陆地轮廓，色块为示意范围，非精确边界。';
+
+  /* 切季：镜头拉回全球，然后重新开始巡航 */
+  MAP.idx = -1;
+  MAP.cur = MAP.home.slice();
+  setVB(MAP.home);
+  highlight(0);
+  if (MOTION.ok) setTimeout(() => { if (MAP.playing) tourStep(); }, 700);
+}
+
+const landPath = document.getElementById('landPath');
+if (DATA.basemap) { landPath.setAttribute('d', DATA.basemap); }
+document.getElementById('nino34Label').textContent =
+  'Niño3.4  ' + fmt(DATA.weeklyLatest.n34) + '°C';
+
+MAP.svg = document.getElementById('impactMap');
+MAP.tip = document.getElementById('mapTip');
+
+each(qsa(document, '#seasonSwitch button'), btn => {
+  btn.addEventListener('click', ()=>{
+    each(qsa(document, '#seasonSwitch button'), b => { if (b.classList) b.classList.remove('on'); });
+    if (btn.classList) btn.classList.add('on');
+    renderImpact(btn.dataset.season);
+  });
+});
+
+/* 点地图 = 直接跳到该区域（打断巡航，把控制权交回用户） */
+(function(){
+  const svg = MAP.svg;
+  if (!svg || !svg.addEventListener) return;
+  svg.addEventListener('click', e => {
+    const t = e.target;
+    const g = t && t.parentNode;
+    if (g && g.classList && g.classList.contains('mk')) {
+      const idx = Array.prototype.indexOf.call(g.parentNode.children, g);
+      tourOn(false);
+      highlight(idx);
+      flyTo(frameOf(MAP.list[idx]), 900);
+    }
+  });
+  svg.addEventListener('mouseenter', () => { MAP.hovering = true; });
+  svg.addEventListener('mouseleave', () => { MAP.hovering = false; });
+})();
+
+(function(){
+  const b = document.getElementById('tourBtn');
+  const zo = document.getElementById('zoomOut');
+  if (b) b.addEventListener('click', () => {
+    tourOn(!MAP.playing);
+    if (MAP.playing) { tourStart(); tourStep(); }
+  });
+  if (zo) zo.addEventListener('click', () => {
+    tourOn(false);
+    highlight(-1);
+    if (MAP.tip) MAP.tip.hidden = true;
+    flyTo(MAP.home, 1100);
+  });
+})();
+
+renderImpact('DJF');
+tourStart();
+
+/* ---------- 页脚作者信息与课题组二维码 ---------- */
+(function(){
+  const img = document.getElementById('qrImg');
+  const box = document.getElementById('whoQr');
+  if (img && DATA.qrcode) { img.src = DATA.qrcode; }
+  else if (box) { box.style.display = 'none'; }   // 取不到二维码时只保留作者文字
+})();
+
+/* ---------- 绘图调用 ---------- */
+function shortDate(s){ return s.slice(2,7).replace('-','/'); }
+const CHARTS = [];
+
+// 标题里写明实际可用的数据跨度（由脚本注入，避免写死）
+if (DATA.span) {
+  const s = DATA.span;
+  document.getElementById('hintWeekly').textContent =
+    'OISST v2.1 / 1991–2020 基准 · 数据 ' + s.weeklyFirst + ' → ' + s.weeklyLast + '（' + s.weeklyN + ' 周）';
+  document.getElementById('hintMonthly').textContent =
+    '月度 · 数据 ' + s.monthlyFirst + ' → ' + s.monthlyLast + '（' + s.monthlyN + ' 个月）';
+}
+
+// 周 Niño 区：可缩放时间轴 + 年数窗口
+CHARTS.push(makeChart(document.getElementById('cvWeekly'), {
+  labels: DATA.weekly.labels.map(shortDate),
+  tips:   DATA.weekly.labels,
+  type:   'line',
+  zoom:   true,
+  minSpan: 8,
+  readout: 'rangeWeekly',
+  reset:   'resetWeekly',
+  spanControl: 'spanWeekly',
+  defaultYears: 3,
+  series: [
+    {name:'Niño1+2', color:C.n12, data:DATA.weekly.n12, unit:'°C'},
+    {name:'Niño3',   color:C.n3,  data:DATA.weekly.n3,  unit:'°C'},
+    {name:'Niño3.4', color:C.n34, data:DATA.weekly.n34, width:2.4, unit:'°C'},
+    {name:'Niño4',   color:C.n4,  data:DATA.weekly.n4,  unit:'°C'},
+    {name:'Niño3.4 相对', color:C.rel, data:DATA.weekly.r34, dash:[5,4], unit:'°C'}
+  ]
+}));
+
+// 月度相对 Niño3.4：可缩放时间轴 + 年数窗口
+CHARTS.push(makeChart(document.getElementById('cvMonthly'), {
+  labels: DATA.monthly.labels.map(shortDate),
+  tips:   DATA.monthly.labels,
+  type:   'bar',
+  zoom:   true,
+  minSpan: 6,
+  readout: 'rangeMonthly',
+  reset:   'resetMonthly',
+  spanControl: 'spanMonthly',
+  defaultYears: 10,
+  series: [{name:'相对 Niño3.4', color:C.n34, data:DATA.monthly.roni, unit:'°C'}]
+}));
+
+// 季节预报扇形：仅 9 个点，不缩放
+if (DATA.fcst.length) {
+  CHARTS.push(makeChart(document.getElementById('cvFan'), {
+    labels: DATA.fcst.map(r=>r.season),
+    tips:   DATA.fcst.map(r=>r.season + '（' + (SEASONMON[r.season]||'') + '）'),
+    type:   'line',
+    zoom:   false,
+    series: [{name:'RONI P50', color:C.n34, data:DATA.fcst.map(r=>r.p50), width:2.4}],
+    band:   {lo: DATA.fcst.map(r=>r.p05), hi: DATA.fcst.map(r=>r.p95)}
+  }));
+}
+
+window.addEventListener('resize', () => { CHARTS.forEach(c => c.render()); });
+
+/* ================================================================
+   4. 把整页接成"一镜到底"：章节徽标 + 镜头脊柱 + 解说字幕 + 进度
+   ================================================================ */
+const CHAPTERS = [
+  {id:'top',   no:'SHOT 01', t:'首屏 · 当前状态',  d:'Niño3.4 距平与官方定级'},
+  {id:'act-1', no:'SHOT 02', t:'官方结论',         d:'NOAA CPC 诊断原文与下次发布'},
+  {id:'act-2', no:'SHOT 03', t:'周 Niño 区海温',   d:'五个序列，可缩放的时间轴'},
+  {id:'act-3', no:'SHOT 04', t:'全球影响区巡航',   d:'镜头在遥相关区域之间推拉'},
+  {id:'act-4', no:'SHOT 05', t:'月度相对 Niño3.4', d:'1950 年以来的 RONI 逐月'},
+  {id:'act-5', no:'SHOT 06', t:'RONI 分位展望',    d:'P5–P95 扇形，未来 9 个季节'},
+  {id:'act-6', no:'SHOT 07', t:'概率与分位',       d:'El Niño / 中性 / La Niña'},
+  {id:'act-8', no:'SHOT 08', t:'季节指数历史',     d:'ONI 与 RONI 的 3 月滑动值'},
+  {id:'act-9', no:'SHOT 09', t:'数据源与口径',     d:'更新节奏与不可混用的指数'}
+];
+
+/* 章节编号徽标：按 DOM 顺序自动编号，模板里不用写死 */
+(function(){
+  if (!document.querySelectorAll || !document.createElement) return;
+  const secs = qsa(document, '.wrap section');
+  if (!secs.length) return;
+  let k = 0;
+  each(secs, sec => {
+    if (sec.classList && sec.classList.contains('author')) return;
+    const h = qs(sec, 'h2');
+    if (!h || !h.insertBefore || !h.firstChild) return;
+    const badge = document.createElement('span');
+    badge.className = 'act';
+    badge.textContent = ('0' + (++k)).slice(-2);
+    h.insertBefore(badge, h.firstChild);
+  });
+})();
+
+function scrollToId(id){
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (typeof el.scrollIntoView === 'function') {
+    try { el.scrollIntoView({behavior: MOTION.ok ? 'smooth' : 'auto', block:'start'}); return; } catch(e){}
+  }
+  if (typeof window.scrollTo === 'function') {
+    try { window.scrollTo(0, el.offsetTop || 0); } catch(e){}
+  }
+}
+
+/* 章节脊柱 */
+(function(){
+  const rail = document.getElementById('rail');
+  if (!rail) return;
+  rail.innerHTML = CHAPTERS.map(c =>
+    '<a href="#' + c.id + '" data-go="' + c.id + '"><span>' + c.t + '</span><i></i></a>').join('');
+  rail.addEventListener('click', e => {
+    const a = (e.target && e.target.closest) ? e.target.closest('a[data-go]') : null;
+    if (!a) return;
+    e.preventDefault();
+    scrollToId(a.getAttribute('data-go'));
+  });
+})();
+
+/* 镜头进度 + 字幕：一个 rAF 驱动的连续读数 */
+(function(){
+  if (!MOTION.ok) return;
+  const fill = document.getElementById('rainFill');
+  const slate = document.getElementById('slate');
+  const sNo = document.getElementById('slateNo');
+  const sT = document.getElementById('slateTitle');
+  const sD = document.getElementById('slateDesc');
+  const terr = qs(document, '.terrain');
+  const hero = qs(document, '.hero');
+  const railLinks = qsa(document, '#rail a');
+  let lastAct = -1, ticking = false;
+
+  function measure(){
+    const de = document.documentElement;
+    const max = Math.max(1, (de.scrollHeight || 0) - (window.innerHeight || 0));
+    const p = Math.max(0, Math.min(1, (window.pageYOffset || de.scrollTop || 0) / max));
+    LENS.p = p;
+    if (fill) fill.style.width = (p*100).toFixed(2) + '%';
+
+    /* 当前幕：取"顶部已越过视口 30% 线"的最后一幕 */
+    let act = 0;
+    for (let i = 0; i < CHAPTERS.length; i++){
+      const el = document.getElementById(CHAPTERS[i].id);
+      if (el && el.getBoundingClientRect && el.getBoundingClientRect().top <= (window.innerHeight || 700) * 0.3) act = i;
+    }
+    LENS.act = act;
+    if (act !== lastAct) {
+      lastAct = act;
+      const c = CHAPTERS[act];
+      if (railLinks && railLinks.length) each(railLinks, (a,i) => { if (a.classList) a.classList.toggle('on', i===act); });
+      if (slate && slate.classList) slate.classList.add('on');
+      if (sNo) sNo.textContent = c.no;
+      if (sT) sT.textContent = c.t;
+      if (sD) sD.textContent = c.d;
+    }
+
+    /* 地形剪影视差：整页像一台连续推轨的摄影机。
+       注意：hero 只做透明度淡出、不做位移 —— 位移是相对文档流的，
+       往下滚时会把 hero 推到后面章节上造成叠影。 */
+    if (terr) terr.style.transform = 'translate3d(0,' + (-p*46).toFixed(1) + 'px,0)';
+    if (hero) {
+      const vh = window.innerHeight || 800;
+      hero.style.opacity = String(Math.max(0, 1 - (window.pageYOffset || de.scrollTop || 0) / (vh * 0.85)));
+    }
+  }
+  function onScroll(){
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => { ticking = false; measure(); });
+  }
+  window.addEventListener('scroll', onScroll, {passive:true});
+  window.addEventListener('resize', measure);
+  measure();
+})();
+
+/* 滚动揭示：进入视口点亮一次，回来后不再抖动 */
+(function(){
+  if (!MOTION.io) return;
+  const targets = qsa(document, 'section, .card, .mapbox, .dist, .scroll, .figmap');
+  if (!targets.length) return;
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(en => {
+      if (!en.isIntersecting) return;
+      const el = en.target;
+      if (el.classList) el.classList.add('in');
+      io.unobserve(el);
+      /* 图表进入视口 → 沿时间轴生长一次 */
+      const cv = qs(el, 'canvas');
+      if (cv) {
+        let chart = null;
+        for (let i = 0; i < CHARTS.length; i++) if (CHARTS[i].cv === cv) chart = CHARTS[i];
+        if (chart && !chart._done) { chart._done = true; chart.reveal(); }
+      }
+    });
+  }, {rootMargin:'0px 0px -12% 0px', threshold:0.12});
+  each(targets, el => {
+    if (el.classList && !el.classList.contains('card')) el.classList.add('rv');
+    io.observe(el);
+  });
+})();
+
+/* ================================================================
+   5. 全屏看图：让时间轴图在大屏上也是一镜到底
+   ================================================================ */
+(function(){
+  const btns = qsa(document, '[data-full]');
+  if (!btns.length) return;
+  each(btns, b => b.addEventListener('click', () => {
+    const cv = document.getElementById(b.getAttribute('data-full'));
+    if (!cv) return;
+    const host = cv.parentNode;
+    if (!host) return;
+    const on = (host.classList && host.classList.toggle) ? host.classList.toggle('full') : false;
+    if (on) {
+      host.style.position = 'fixed'; host.style.inset = '12px'; host.style.zIndex = '90';
+      host.style.background = 'rgba(4,14,13,.985)'; host.style.overflow = 'auto';
+      host.style.borderRadius = '18px'; host.style.padding = '22px';
+      cv.style.height = 'calc(100vh - 190px)';
+      b.textContent = '退出全屏';
+    } else {
+      host.style.position = ''; host.style.inset = ''; host.style.zIndex = '';
+      host.style.background = ''; host.style.overflow = ''; host.style.borderRadius = '';
+      host.style.padding = ''; cv.style.height = '';
+      b.textContent = '全屏';
+    }
+    each(CHARTS, c => c.render());
+  }));
+})();
+</script>
+</body>
+</html>

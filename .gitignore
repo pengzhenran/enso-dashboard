@@ -4,8 +4,45 @@ data/raw/
 # 本地生成物：docs/ 是提交进仓库的发布副本（Pages 直接托管），report/ 只是本地预览用，不入库
 report/
 
+# 注意：miniprogram/data/ 与 miniprogram/images/ 虽然也是生成物（由
+# scripts/Build-MiniProgramData.mjs 产出），但它们是随小程序一起分发的成品，
+# 体积仅约 280 KB，且不提交就无法直接用开发者工具导入，因此**照常入库**，
+# 与 docs/index.html 的处理保持一致。
+
 # 系统与编辑器杂项
 Thumbs.db
 desktop.ini
 .DS_Store
 *.tmp
+
+# 微信开发者工具本地私有配置（含个人设置与编译模式，不入库）
+miniprogram/project.private.config.json
+miniprogram-proto/project.private.config.json
+
+# ─────────────────────────────────────────────────────────────
+# 公众号凭据：AppSecret 等同于密码，绝不能入库！
+# scripts/Configure-WeChatMenu.ps1 会从这里读取，或改用环境变量
+# WECHAT_APPID / WECHAT_APPSECRET。
+# ─────────────────────────────────────────────────────────────
+.wechat-secret.json
+*.wechat-secret.json
+
+# 菜单脚本的本地产物：dump 出的模板与 get 拉回的线上菜单
+wechat-menu.json
+wechat-menu.current.json
+wechat-menu-worksheet.md
+
+# Tencent Cloud EdgeOne（CLI 自动追加）
+# .edgeone/ 存登录令牌与部署记录，绝不能入库
+.env
+.edgeone/
+.tef_dist/
+
+# 真机预览二维码（临时，随预览过期失效）
+
+# 真机预览二维码与模拟器截图（临时，随预览过期失效）
+preview-*.jpg
+preview-*.png
+
+# 提交审核用的手机截图产出目录（由开发者工具模拟器截取 + 裁切，本地预览用）
+preview-shots/

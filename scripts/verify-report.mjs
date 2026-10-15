@@ -99,7 +99,8 @@ try {
   process.exit(1);
 }
 
-const rows = (sel) => ((getEl(sel).innerHTML.match(/<tr>/g) ?? []).length);
+// 行数统计：兼容 <tr> 与带属性的 <tr class="rv" style="…">（新版逐行揭示会给行加属性）
+const rows = (sel) => ((getEl(sel).innerHTML.match(/<tr[\s>]/g) ?? []).length);
 const checks = [
   ['周指数表行数 ≥ 8', rows('#tblWeekly tbody') >= 8, rows('#tblWeekly tbody')],
   ['概率表行数 ≥ 9', rows('#tblProb tbody') >= 9, rows('#tblProb tbody')],
@@ -190,6 +191,16 @@ checks.push(
   ['月度「全部」= 1950 年起', monthlyAll > 850, monthlyAll + ' 点'],
   ['标题写明数据跨度', /1981-\d\d-\d\d/.test(getEl('hintWeekly').textContent || '') &&
     /1950-01/.test(getEl('hintMonthly').textContent || ''), getEl('hintWeekly').textContent]
+);
+
+checks.push(
+  ['页脚作者信息完整', /彭桢燃/.test(html) && /中国地质大学（武汉）/.test(html) && /TVGG/.test(html), ''],
+  ['页脚邮箱为可点击链接', /mailto:zhenran\.peng@cug\.edu\.cn/.test(html), ''],
+  ['页脚含 GitHub 主页链接', /href="https:\/\/github\.com\/pengzhenran"/.test(html), ''],
+  ['页脚不含 CGU 报告页链接', !/cgu-2026-reports\/"/.test(html), ''],
+  ['课题组二维码已内嵌', String(getEl('qrImg').src).startsWith('data:image/jpeg;base64,'),
+    String(getEl('qrImg').src).slice(0, 26)],
+  ['二维码有文字说明', /课题组公众号/.test(html), '']
 );
 
 let failed = 0;

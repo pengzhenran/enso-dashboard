@@ -270,9 +270,14 @@ DNS 能解析到 GitHub 真实 IP，但连接被阻断。
 
 ### 数据一致性
 
-小程序和网页版共用**同一份** `DATA`：`Build-MiniProgramData.mjs` 从 `docs/index.html`
-里抽出数据生成小程序模块。所以两个版本的数值、口径、时间跨度永远一致，
-不会出现「网页上是 3.2、小程序上是 3.0」。
+小程序和网页版共用**同一份** `DATA`：`Build-MiniProgramData.mjs` 从
+`report/enso_dashboard.html`（权威来源，`Update-EnsoData.ps1` 的实际产出）里抽出数据
+生成小程序模块；该文件不存在时回退到 `docs/index.html`。
+所以两个版本的数值、口径、时间跨度永远一致，不会出现「网页上是 3.2、小程序上是 3.0」。
+
+> ⚠️ `docs/index.html` 是 **GitHub Pages 的发布副本**，需要由 `report/` 派生同步。
+> 2026-10-15 发现两者脱节：`docs/` 停在 09-30，Pages 上因此挂着旧数据。
+> 一键脚本 `Update-And-Upload.ps1` 会比对两者的数据截止日并在不一致时告警。
 
 代价是数据打包在代码包里，**每次更新数据都要重新上传审核**。
 如果嫌麻烦，见 [`miniprogram/README.md`](miniprogram/README.md) 第七节的云开发热更新改造方案。

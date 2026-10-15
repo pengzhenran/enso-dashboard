@@ -12,9 +12,7 @@ enso/
 │  ├─ Publish-ToGitHub.ps1      走 GitHub API 发布到仓库（等价 git push，绕开被阻断的 github.com）
 │  ├─ build-basemap.mjs         生成简化世界陆地底图（Natural Earth 110m → SVG path）
 │  ├─ serve-report.mjs          本地静态服务器，用于在浏览器里查看报告
-│  ├─ verify-report.mjs         报告自检（35 项：数据渲染、地图、时间轴缩放/平移/点击、动画降级、页脚）
-│  ├─ Build-MiniProgramData.mjs 从同一份 DATA 生成小程序的数据模块与图片
-│  └─ verify-miniprogram.mjs    小程序自检（177 项：语法、绑定、图表行为、节流、地图、体积）
+│  └─ verify-report.mjs         报告自检（35 项：数据渲染、地图、时间轴缩放/平移/点击、动画降级、页脚）
 ├─ assets/
 │  └─ qrcode.jpg                课题组公众号二维码（页脚用，入库，生成时 base64 内嵌）
 ├─ docs/
@@ -23,12 +21,6 @@ enso/
 │  └─ enso_dashboard.html       生成的仪表盘（自包含，双击即可打开；本地预览用，不入库）
 ├─ backup/
 │  └─ web-v1-baseline-20261015/ 前端优化版之前的网页版快照，含回滚说明 RESTORE.md
-├─ miniprogram/                 微信小程序版（原生 WXML/WXSS + canvas 2d）
-│  ├─ pages/                    概览 / 周指数 / 月度 / 影响区 / 分位展望 / 数据源
-│  ├─ data/                     由 Build-MiniProgramData.mjs 生成，勿手改
-│  ├─ images/                   从网页版内嵌 base64 释放出的图片
-│  ├─ utils/                    chart.js 图表引擎、map.js 地图、canvas-init.js
-│  └─ README.md                 小程序部署与审核说明
 ├─ data/
 │  ├─ raw/                      原始文件 + _meta.json（源站 Last-Modified）+ maps/（CPC 全球回归图）
 │  └─ processed/
@@ -38,7 +30,8 @@ enso/
 └─ README.md
 ```
 
-> `scripts/dashboard.template.html` 是**唯一**的网页版样式与交互来源。
+> 本仓库**只负责网页版**：抓数 → 生成自包含单文件 → 发布到 GitHub Pages。
+> `scripts/dashboard.template.html` 是**唯一**的网页版样式与交互来源；
 > `Update-EnsoData.ps1` 只负责抓数、解析、把 `__ENSO_DATA__` 替换成 JSON 后写文件，
 > 改版时不需要（也不应该）碰 PowerShell 里的引号转义规则。
 
@@ -70,19 +63,6 @@ node .\scripts\verify-report.mjs docs\index.html    # 发布副本也过一遍
 > 与 `docs\index.html`（Pages 唯一源，入库）必须**始终同源**，
 > 否则一次「只跑生成器、没带参数」就会让线上停在上一周的数据。
 > 不要再写成 `-PublishDir docs` 来"提醒自己"——默认已经有了。
-
-### 小程序版
-
-```powershell
-# 从同一份 DATA 生成小程序数据模块（周/月序列、元数据、底图、图片）
-node .\scripts\Build-MiniProgramData.mjs
-
-# 小程序自检（163 项：语法、绑定一致性、图表引擎行为、读数条节流、地图解析、包体积）
-node .\scripts\verify-miniprogram.mjs
-```
-
-生成后用[微信开发者工具](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html)
-导入 `miniprogram` 目录即可。完整部署、审核与账号问题见 [`miniprogram/README.md`](miniprogram/README.md)。
 
 要求：Windows PowerShell 5.1 或以上；Node 仅用于底图、预览与自检。
 
@@ -215,15 +195,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\Publish-ToGitHub.ps1 -SkipReg
 
 ## 部署到微信
 
-微信里有两条路：
-
-| 路线 | 前提 | 状态 |
-|---|---|---|
-| **原生小程序**（推荐） | 小程序账号可用 | **已完成**：343 KB，零网络请求，不需要域名/备案/服务器 |
-| **公众号菜单** | 国内可访问的 HTTPS 地址 + 账号有菜单权限 | 需先解决托管，且**未认证个人订阅号可能没有菜单入口** |
-
-小程序版把数据全部打包进代码包，是零外部请求的——反而比公众号路线省事（不用域名、不用备案、不用服务器）。
-唯一阻塞是**账号被冻结**，见 [miniprogram/README.md](miniprogram/README.md) 第 1 节。
+本仓库只产出**网页版**，所以微信侧的唯一路线是**公众号菜单挂链接**（或用「阅读原文」）：
+需要一个**国内可访问的 HTTPS 地址**，并且账号有菜单权限。
 
 ### ⚠️ 现有 Pages 地址在国内打不开
 
@@ -231,9 +204,8 @@ GitHub Pages 本身是好的（`status: built`、公开、HTTPS），但实测
 **`https://pengzhenran.github.io/enso-dashboard/` 从国内 8 秒超时**（同一时刻 baidu.com 139 ms 返回 200）。
 DNS 能解析到 GitHub 真实 IP，但连接被阻断。
 
-公众号路线必须先换托管（推荐 [EdgeOne Pages Drop](https://pages.edgeone.ai/zh/drop)，
-免费、拖放部署、腾讯云 CDN）；小程序路线不受影响。
-详见 [WECHAT.md](WECHAT.md)。
+所以挂到公众号之前必须先换托管（推荐 [EdgeOne Pages Drop](https://pages.edgeone.ai/zh/drop)，
+免费、拖放部署、腾讯云 CDN），详见 [WECHAT.md](WECHAT.md)。
 
 ### 公众号菜单的一个硬性限制
 
@@ -242,59 +214,6 @@ DNS 能解析到 GitHub 真实 IP，但连接被阻断。
 只允许**企业主体已认证**账号调用。个人主体永远无法通过认证达到这个门槛，
 所以[菜单脚本](scripts/Configure-WeChatMenu.ps1)只对企业认证主体或服务号可用；
 未认证账号只能用后台可视化菜单（如果后台有这个入口的话）。
-
-## 部署到微信小程序
-
-线上是**原生小程序**（`miniprogram/`），不是 `web-view` 套壳，因此**个人主体也能发布**。
-
-### 为什么不用 web-view 套壳
-
-`web-view` 看起来最省事——把 `docs/index.html` 传到一个 HTTPS 域名，一行 `<web-view src="...">` 就完事。
-但它有两道硬门槛，都不好过：
-
-1. [官方文档](https://developers.weixin.qq.com/miniprogram/dev/component/web-view.html)明确写着
-   **「个人类型的小程序暂不支持使用」**。个人主体直接出局。
-2. 企业主体需要在后台配置**业务域名**：域名必须 HTTPS、完成 ICP 备案、
-   且能在根目录放置 `MP_verify_*.txt` 校验文件。
-   GitHub Pages 的 `*.github.io` **无法 ICP 备案**，现有发布链路用不上。
-
-所以这里把仪表盘用 WXML/WXSS + `canvas 2d` 重写了一遍。
-
-### 成果
-
-| | |
-|---|---|
-| 代码包体积 | **343 KB**（主包上限 2048 KB） |
-| 网络请求 | **零**——数据内置，无需服务器域名、无需备案域名、离线可看 |
-| 页面 | 概览 / 周指数 / 月度 / 影响区 / 分位展望 / 数据源 |
-| 图表 | canvas 2d 自绘，保留缩放、平移、点击定位 |
-
-移植时把浏览器的鼠标交互换成了触摸交互：滚轮缩放 → 双指捏合（另配放大/缩小按钮），
-悬停提示 → 单指按住跟随，双击复位 → 复位按钮。地图页则把网页版的 SVG path
-解析成 canvas 路径指令重放（小程序不支持 `<svg>` 标签）。
-
-### 数据一致性
-
-小程序和网页版共用**同一份** `DATA`：`Build-MiniProgramData.mjs` 从
-`report/enso_dashboard.html`（权威来源，`Update-EnsoData.ps1` 的实际产出）里抽出数据
-生成小程序模块；该文件不存在时回退到 `docs/index.html`。
-所以两个版本的数值、口径、时间跨度永远一致，不会出现「网页上是 3.2、小程序上是 3.0」。
-
-> ⚠️ `docs/index.html` 是 **GitHub Pages 的发布副本**，需要由 `report/` 派生同步。
-> 2026-10-15 发现两者脱节：`docs/` 停在 09-30，Pages 上因此挂着旧数据。
-> 一键脚本 `Update-And-Upload.ps1` 会比对两者的数据截止日并在不一致时告警。
-
-代价是数据打包在代码包里，**每次更新数据都要重新上传审核**。
-如果嫌麻烦，见 [`miniprogram/README.md`](miniprogram/README.md) 第七节的云开发热更新改造方案。
-
-### 账号被冻结
-
-小程序账号冻结**不影响开发和调试**，只影响上传、审核和发布。
-开发者工具用「游客模式」或「测试号」就能把界面跑起来，等账号恢复后
-把 `project.config.json` 的 `appid` 换成真实 AppID 再上传即可，代码不用改。
-
-冻结原因不同处理方式完全不同（未完成小程序备案 / 长期未登录 / 违规 / 主体失效），
-**[`miniprogram/README.md`](miniprogram/README.md) 第一节**列了对照表和重新注册的路径。
 
 ## 可选：每天自动更新（本机）
 

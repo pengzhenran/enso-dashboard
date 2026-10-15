@@ -27,6 +27,14 @@ miniprogram-proto/project.private.config.json
 .wechat-secret.json
 *.wechat-secret.json
 
+# ─────────────────────────────────────────────────────────────
+# 通知凭据：邮箱授权码 / 微信推送 SendKey 等同于密码，绝不能入库！
+# 从 scripts/notify.config.example.json 复制成仓库根目录的 .notify.json 后填写。
+# scripts/Watch-EnsoData.ps1 会读取它，把更新结果推到你手机。
+# ─────────────────────────────────────────────────────────────
+.notify.json
+*.notify.json
+
 # 菜单脚本的本地产物：dump 出的模板与 get 拉回的线上菜单
 wechat-menu.json
 wechat-menu.current.json

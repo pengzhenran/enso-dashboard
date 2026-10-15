@@ -296,3 +296,5 @@ schtasks /Delete /TN "EnsoDashboard" /F # 删除
 - `scripts/verify-report.mjs` 会在 Node 里用 DOM/Canvas 桩真实执行页面脚本，并模拟滚轮缩放、拖动平移、单击定位、双击复位，可当作改动后的回归测试。桩环境没有 `requestAnimationFrame` / `IntersectionObserver`，正好用来验证"动画关闭时页面照样完整渲染"这条降级路径。
 - 三个 CPC 动态页面（诊断 / 展望 / 概率）的 HTTP `Last-Modified` 等于请求时刻，没有参考价值，报告里改显示解析出的"内容日期"。
 - 数据版权归各来源机构；本页仅供监测参考，不构成预报结论。
+
+<!-- 输入指纹测试 -->

@@ -57,3 +57,6 @@ preview-shots/
 
 # 本机自动更新脚本的运行日志与发布状态（每台机器各自一份，不入库）
 data/logs/
+
+# 本地渲染沙箱（@napi-rs/canvas 截图用，不入库）
+.render/

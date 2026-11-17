@@ -40,9 +40,14 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# EnsoPublishUtf8: gh 的输出是 UTF-8，PS 5.1 默认按 ANSI 解，响应里有中文时 ConvertFrom-Json 会炸（2026-11-10 就是这么失败的）。
+$OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$env:GH_PAGER = ''
+
 if (-not $PSScriptRoot) { throw '请以脚本方式运行（需要 $PSScriptRoot 定位项目根目录）' }
 $Root = Split-Path -Parent $PSScriptRoot
-if (-not $Message) { $Message = 'ENSO 仪表盘更新 ' + (Get-Date).ToString('yyyy-MM-dd HH:mm') }
+if (-not $Message) { $Message = 'data: ENSO dashboard update ' + (Get-Date).ToString('yyyy-MM-dd HH:mm') }
 
 $DefaultPaths = @(
     '.gitignore'
@@ -50,6 +55,7 @@ $DefaultPaths = @(
     '.github/workflows/enso-pages.yml'
     'docs/index.html'
     'docs/.nojekyll'
+    'assets/qrcode.jpg'
     'data/processed/basemap.txt'
     'data/processed/nino_weekly.csv'
     'data/processed/enso_monthly.csv'
@@ -57,6 +63,10 @@ $DefaultPaths = @(
     'scripts/build-basemap.mjs'
     'scripts/serve-report.mjs'
     'scripts/verify-report.mjs'
+    'scripts/Watch-EnsoData.ps1'
+    'scripts/Update-And-Upload.ps1'
+    'scripts/Publish-ToGitHub.ps1'
+    'scripts/verify-miniprogram.mjs'
 )
 if (-not $Path -or $Path.Count -eq 0) { $Path = $DefaultPaths }
 

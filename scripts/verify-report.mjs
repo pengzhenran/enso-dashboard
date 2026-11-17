@@ -99,8 +99,7 @@ try {
   process.exit(1);
 }
 
-// 行数统计：兼容 <tr> 与带属性的 <tr class="rv" style="…">（新版逐行揭示会给行加属性）
-const rows = (sel) => ((getEl(sel).innerHTML.match(/<tr[\s>]/g) ?? []).length);
+const rows = (sel) => ((getEl(sel).innerHTML.match(/<tr>/g) ?? []).length);
 const checks = [
   ['周指数表行数 ≥ 8', rows('#tblWeekly tbody') >= 8, rows('#tblWeekly tbody')],
   ['概率表行数 ≥ 9', rows('#tblProb tbody') >= 9, rows('#tblProb tbody')],

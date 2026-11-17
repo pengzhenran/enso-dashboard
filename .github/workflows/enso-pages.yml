@@ -1,0 +1,61 @@
+name: ENSO dashboard · 生成并发布到 GitHub Pages
+
+# 页面是纯静态单文件（零外部请求），所以 Pages 直接托管即可。
+# 工作流每周重新抓一次 CPC 数据并重新发布，仓库里不需要提交生成物。
+on:
+  schedule:
+    - cron: "0 2 * * 1"        # 每周一 02:00 UTC（北京时间 10:00）
+  workflow_dispatch:            # 也可在 Actions 页手动触发
+  push:
+    branches: [main]
+    paths:
+      - "scripts/**"
+      - ".github/workflows/enso-pages.yml"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: enso-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest        # 生成器是 PowerShell，用 Windows runner 最省事
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 准备 Node（用于生成陆地底图）
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 抓取 CPC 数据并生成页面
+        shell: powershell
+        run: ./scripts/Update-EnsoData.ps1 -PublishDir docs
+
+      - name: 页面自检
+        shell: powershell
+        run: node scripts/verify-report.mjs docs/index.html
+
+      - name: 配置 Pages
+        uses: actions/configure-pages@v5
+
+      - name: 上传站点
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 发布
+        id: deployment
+        uses: actions/deploy-pages@v4

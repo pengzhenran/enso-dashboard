@@ -489,7 +489,16 @@ const imgRefs = [
 
 ok('至少释放了二维码图片', imgRefs.length >= 1, imgRefs.join(', '));
 for (const f of new Set(imgRefs)) {
-  ok('图片存在：' + f, existsSync(join(mp, 'images', f)));
+  const p = join(mp, 'images', f);
+  ok('图片存在：' + f, existsSync(p));
+  // 只查存在不够：CPC 回归图曾经是 GIF87a 却叫 .png（`.png` 后缀骗过所有人）。
+  // 这里按文件头核对真实格式，别再让「后缀对、内容错」的东西进包。
+  if (existsSync(p)) {
+    const head = readFileSync(p).subarray(0, 8);
+    const magicOk = (f.endsWith('.png') && head[0] === 0x89 && head.toString('latin1', 1, 4) === 'PNG')
+      || ((f.endsWith('.jpg') || f.endsWith('.jpeg')) && head[0] === 0xff && head[1] === 0xd8);
+    ok('图片格式与后缀一致：' + f, magicOk, head.toString('hex'));
+  }
 }
 
 // ═══════════════════════════════════════════ G. 代码包体积
@@ -526,6 +535,146 @@ if (excluded) {
 ok('packOptions 排除了 README.md 等非代码文件', excluded > 0, '排除 ' + (excluded / 1024).toFixed(1) + ' KB');
 ok('主包体积 < 2 MB 上限', total < 2 * 1024 * 1024, (total / 1024).toFixed(1) + ' KB');
 ok('主包体积留有一半余量', total < 1 * 1024 * 1024, (total / 1024).toFixed(1) + ' KB');
+
+// ═══════════════════════════════════════════ H. 宽屏布局
+
+section('H. 宽屏两栏与画布尺寸');
+
+const idxWxml = readFileSync(join(mp, 'pages/index/index.wxml'), 'utf8');
+const idxWxss = readFileSync(join(mp, 'pages/index/index.wxss'), 'utf8');
+const appWxss = readFileSync(join(mp, 'app.wxss'), 'utf8');
+
+// 两栏只靠 CSS 断点切换，wxml 结构必须一直在（手机端是一栏，结构相同）
+ok('概览页有两栏壳 .cols / .col.ca / .col.cb',
+  /class="cols"/.test(idxWxml) && /class="col ca"/.test(idxWxml) && /class="col cb"/.test(idxWxml));
+ok('概览页页头分成数字区与图表区',
+  /class="hgrid"/.test(idxWxml) && /class="hnum"/.test(idxWxml) && /class="hchart"/.test(idxWxml));
+ok('两栏只在 >=820px 生效（手机不受影响）',
+  /@media\s*\(min-width:\s*820px\)[\s\S]*?\.cols\s*\{\s*display:\s*flex/.test(idxWxss));
+ok('宽屏容器放宽到 1040px',
+  /@media\s*\(min-width:\s*820px\)[\s\S]*?1040px/.test(appWxss));
+
+// canvas 的位图尺寸独立于 CSS：窗口尺寸一变（折叠屏展开/旋转/分屏）就必须重测重画，
+// 否则内容被拉伸变糊且不报错。所以有 canvas 的页面都要有 onResize。
+// 只匹配「有 onResize」太松：函数体被清空也照样通过。要求它真的调了重测。
+// 另外折叠屏「展开」不一定派发 onResize，还要挂 wx.onWindowResize 兜一层。
+for (const p of ['index', 'weekly', 'monthly', 'fan', 'impact']) {
+  const js = readFileSync(join(mp, 'pages', p, p + '.js'), 'utf8');
+  const m = js.match(/onResize:\s*function[\s\S]*?\n  \}/);
+  const body = m ? m[0] : '';
+  ok('有画布的页面实现 onResize（' + p + '）', !!m);
+  ok('onResize 真的重测重画（' + p + '）', /remeasure\(\)|drawSpark\(\)/.test(body));
+  ok('挂了 wx.onWindowResize 兜底（' + p + '）', /watchWindowResize\(this,\s*this\.\w+\)/.test(js));
+}
+
+// wx.onWindowResize 兜底：真实执行 canvas-init 的 watchWindowResize，
+// 验证挂上、触发、不重复挂、卸载时摘掉（不摘会越积越多，每进一次页面多画一次）
+const ciMod = await import(mpUrl + 'utils/canvas-init.js');
+const watchWindowResize = ciMod.watchWindowResize || (ciMod.default && ciMod.default.watchWindowResize);
+const winHandlers = [];
+globalThis.wx = {
+  onWindowResize(fn) { winHandlers.push(fn); },
+  offWindowResize(fn) { const i = winHandlers.indexOf(fn); if (i >= 0) winHandlers.splice(i, 1); }
+};
+let resizeFired = 0;
+const fakePage = { remeasure: function () { resizeFired++; } };
+watchWindowResize(fakePage, fakePage.remeasure);
+ok('窗口兜底已挂到 wx.onWindowResize', winHandlers.length === 1);
+winHandlers[0]();
+ok('窗口尺寸变化会触发重测', resizeFired === 1);
+watchWindowResize(fakePage, fakePage.remeasure);
+ok('同一页面重复挂不会注册两次', winHandlers.length === 1);
+fakePage.onUnload();
+ok('页面卸载时摘掉 handler', winHandlers.length === 0);
+delete globalThis.wx;
+
+// 自定义 tabBar 的坑（2026-11-17 真机连踩四次，最后一次改成结构方案）：
+//  1. app.json 的 custom-tab-bar 自动组件是**每个 tab 页各一份实例**，新实例第一帧
+//     只能用声明初值渲染 → 切换时必然闪（亮错一格或整颗消失）。改成页面内自绘。
+//  2. wx.showTabBar 会把原生 tabBar 唤醒，和自定义条同时显示 → 谁都不许调。
+const capsuleJs = readFileSync(join(mp, 'components/tab-capsule/index.js'), 'utf8');
+const shellJs = readFileSync(join(mp, 'custom-tab-bar/index.js'), 'utf8');
+const shellWxml = readFileSync(join(mp, 'custom-tab-bar/index.wxml'), 'utf8');
+
+ok('custom-tab-bar 只剩空壳（真正的胶囊由页面渲染）',
+  !/wx:for|<view|wx:if/.test(shellWxml));
+ok('胶囊组件的下标来自页面（properties.active）', /active:\s*\{\s*type:\s*Number/.test(capsuleJs));
+ok('胶囊点击走 wx.switchTab', /wx\.switchTab\s*\(/.test(capsuleJs));
+ok('没有任何页面再依赖 getTabBar（那套推送是闪的根源）',
+  walk(mp).filter((f) => f.endsWith('.js')).every((f) => !/getTabBar\s*\(/.test(readFileSync(f, 'utf8'))));
+
+let tabApiCalls = [];
+for (const f of walk(mp)) {
+  if (!f.endsWith('.js')) continue;
+  if (/wx\.(hide|show)TabBar\s*\(/.test(readFileSync(f, 'utf8'))) {
+    tabApiCalls.push(f.replace(mp + '\\', ''));
+  }
+}
+ok('没有任何文件调用 wx.hideTabBar / wx.showTabBar', tabApiCalls.length === 0, tabApiCalls.join(', '));
+
+// 四个 tab 页：wxml 里渲染胶囊，js 里 tabIdx 与 app.json 的 tabBar.list 顺序一致
+const appRoutes = (appJson.tabBar.list || []).map((x) => String(x.pagePath));
+const tabPages = ['index', 'weekly', 'monthly', 'impact'];
+for (let i = 0; i < tabPages.length; i++) {
+  const p = tabPages[i];
+  const wxml = readFileSync(join(mp, 'pages', p, p + '.wxml'), 'utf8');
+  const js = readFileSync(join(mp, 'pages', p, p + '.js'), 'utf8');
+  ok('页面渲染胶囊（' + p + '）', /<tab-capsule\b/.test(wxml));
+  ok('页面 tabIdx 与 tabBar 顺序一致（' + p + '）',
+    new RegExp('tabIdx:\\s*' + i + '\\b').test(js) && appRoutes[i] === 'pages/' + p + '/' + p,
+    'tabIdx 应为 ' + i + '，app.json 第 ' + i + ' 项是 ' + appRoutes[i]);
+}
+
+// 胶囊里的 ROUTES 是 tab 顺序的第二份真源（第一份是 app.json.tabBar.list），
+// 只校验 tabIdx 不够 —— 哪天加第五个 tab，胶囊会 switchTab 到错页。
+const capsuleRoutes = ((capsuleJs.match(/ROUTES\s*=\s*\[([\s\S]*?)\]/) || [, ''])[1]
+  .match(/'[^']+'/g) || []).map((x) => x.slice(1, -1));
+const listRoutes = (appJson.tabBar.list || []).map((x) => '/' + String(x.pagePath));
+ok('胶囊 ROUTES 与 app.json tabBar.list 一致',
+  capsuleRoutes.length === listRoutes.length && capsuleRoutes.every((p, i) => p === listRoutes[i]),
+  capsuleRoutes.join(' / ') + ' vs ' + listRoutes.join(' / '));
+
+// 皮肤：每个页面的根节点都必须挂主题类，且 theme 初值同步读盘 ——
+// 否则浅色用户进到漏挂的页面就是深色（follow 页曾漏过），深色用户第一帧闪浅色。
+for (const page of appJson.pages) {
+  const name = page.split('/')[1];
+  const wxml = readFileSync(join(mp, 'pages', name, name + '.wxml'), 'utf8');
+  const js = readFileSync(join(mp, 'pages', name, name + '.js'), 'utf8');
+  ok('页面根节点挂了主题类（' + name + '）', /class="wrap[^"]*t-\{\{theme\}\}/.test(wxml));
+  ok('theme 初值同步读盘（' + name + '）', /theme:\s*skin\.get\(\)/.test(js));
+}
+
+// page 节点没有皮肤类，background: var(--bg) 只会解析成深色基础板
+const pageBlock = (readFileSync(join(mp, 'app.wxss'), 'utf8').match(/^page \{[\s\S]*?\}/m) || [''])[0];
+ok('page 自身不铺主题底色（否则浅色皮会先闪一帧深色）',
+  !/background:\s*var\(--bg\)/.test(pageBlock), pageBlock.slice(0, 60));
+
+// 空闲预载：tab 页第一次切过去才创建，那一帧要解析的数据模块太重。
+// 预载逻辑放在 utils/preload.js，由概览页 onReady（首帧之后）触发，app.js 只做兜底。
+const preloadJs = readFileSync(join(mp, 'utils/preload.js'), 'utf8');
+const needPreload = ['./data/weekly.js', './data/monthly.js', './data/impacts.js', './data/basemap.js', './utils/chart.js'];
+const missPreload = needPreload.filter((m) => preloadJs.indexOf(m.replace('./', "../")) < 0);
+ok('utils/preload.js 预载了各 tab 页的重模块', missPreload.length === 0, missPreload.join(', '));
+ok('预载只在首帧之后触发（概览 onReady + app.js 兜底）',
+  /preloadTabModules\(\)/.test(readFileSync(join(mp, 'pages/index/index.js'), 'utf8')) &&
+  /setTimeout\(preload\.preloadTabModules/.test(readFileSync(join(mp, 'app.js'), 'utf8')));
+
+// 窗口底色必须跟默认皮肤一致：app.json 里是深色时代的值时，页面内容画出来之前
+// 会先闪一帧深色（浅色皮上就是「闪一下再空白」）。默认皮是浅色，静态值也得是浅色。
+const winCfg = appJson.window || {};
+ok('app.json 窗口底色与默认(浅色)皮肤一致', String(winCfg.backgroundColor).toLowerCase() === '#f4f5f7',
+  String(winCfg.backgroundColor));
+ok('app.json 导航栏与默认(浅色)皮肤一致',
+  String(winCfg.navigationBarBackgroundColor).toLowerCase() === '#f4f5f7' && winCfg.navigationBarTextStyle === 'black',
+  winCfg.navigationBarBackgroundColor + ' / ' + winCfg.navigationBarTextStyle);
+
+// 图高与图宽：宽屏下 rpx 会放大 1.45 倍，图表和位图都要封顶
+ok('CPC 回归图不超过原图 720px',
+  /\.figmap\s*\{[^}]*max-width:\s*720px/.test(readFileSync(join(mp, 'pages/impact/impact.wxss'), 'utf8')));
+for (const p of ['weekly', 'monthly', 'fan', 'impact']) {
+  const css = readFileSync(join(mp, 'pages', p, p + '.wxss'), 'utf8');
+  ok('图表高度在宽屏封顶（' + p + '）', /height:\s*min\(\s*\d+rpx\s*,\s*\d+px\s*\)/.test(css));
+}
 
 // ═══════════════════════════════════════════ 汇总
 
